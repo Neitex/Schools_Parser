@@ -9,6 +9,7 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import it.skrape.core.htmlDocument
+import it.skrape.selects.DocElement
 import it.skrape.selects.ElementNotFoundException
 import it.skrape.selects.html5.*
 import java.net.http.HttpConnectTimeoutException
@@ -417,7 +418,157 @@ class SchoolsByParser {
 
         suspend fun getTimetable(teacherID: Int, credentials: Credentials): Result<TwoShiftsTimetable> {
             return wrapReturn("${schoolSubdomain}teacher/$teacherID/timetable", credentials) {
+                val firstShiftTimetable = mutableMapOf<DayOfWeek, Array<Lesson>>(
+                    Pair(DayOfWeek.MONDAY, arrayOf()),
+                    Pair(DayOfWeek.TUESDAY, arrayOf()),
+                    Pair(DayOfWeek.WEDNESDAY, arrayOf()),
+                    Pair(DayOfWeek.THURSDAY, arrayOf()),
+                    Pair(DayOfWeek.FRIDAY, arrayOf()),
+                    Pair(DayOfWeek.SATURDAY, arrayOf())
+                )
+                val secondShiftTimetable = mutableMapOf<DayOfWeek, Array<Lesson>>(
+                    Pair(DayOfWeek.MONDAY, arrayOf()),
+                    Pair(DayOfWeek.TUESDAY, arrayOf()),
+                    Pair(DayOfWeek.WEDNESDAY, arrayOf()),
+                    Pair(DayOfWeek.THURSDAY, arrayOf()),
+                    Pair(DayOfWeek.FRIDAY, arrayOf()),
+                    Pair(DayOfWeek.SATURDAY, arrayOf())
+                )
 
+                fun List<DocElement>.parseTimetable(isSecondShift: Boolean = false) {
+                    for (row in this) {
+                        println(row)
+                        val place = row.td {
+                            withClass = "num"; findFirst {
+                            ownText.removeSuffix(".").toIntOrNull()
+                        }
+                        }
+                            ?: throw UnknownError("Lesson place detection failure: String to Int conversion failed")
+                        val bells = row.td {
+                            withClass = "bells"; TimeConstraints.fromString(
+                            findFirst { ownText }
+                        )
+                        }
+                            ?: continue
+                        for ((index, column) in row.td { findAll { this.withIndex() } }) {
+                            if (column.className != "" && column.className != "crossed-lesson")
+                                continue
+                            if (column.ownText == "—")
+                                continue
+                            column.div {
+                                withClass = "lesson"
+                                findAll {
+                                    forEach {
+                                        val name = b { findFirst { ownText } }
+                                        val classID =
+                                            a { findFirst { this.attribute("href") } }.removePrefix("/class/")
+                                                .toInt()
+                                        if (!isSecondShift) {
+                                            firstShiftTimetable[DayOfWeek.values()[index - 2]] =
+                                                (firstShiftTimetable[DayOfWeek.values()[index - 2]]
+                                                    ?: arrayOf()).let {
+                                                    it + Lesson(
+                                                        place.toShort(),
+                                                        bells,
+                                                        unfoldLessonTitle(name),
+                                                        classID,
+                                                        teacherID
+                                                    )
+                                                }
+                                        } else {
+                                            secondShiftTimetable[DayOfWeek.values()[index - 2]] =
+                                                (secondShiftTimetable[DayOfWeek.values()[index - 2]]
+                                                    ?: arrayOf()).let {
+                                                    it + Lesson(
+                                                        place.toShort(),
+                                                        bells,
+                                                        unfoldLessonTitle(name),
+                                                        classID,
+                                                        teacherID
+                                                    )
+                                                }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                htmlDocument(it.receive<String>()) {
+                    val availableShifts = run {
+                        when (div { withClass = "cc_timeTable"; findAll { this.size } }) {
+                            2 -> Pair(true, true)
+                            1 -> {
+                                var firstShift = false
+                                var secondShift = false
+                                div {
+                                    withClass = "tabs1_cbb"
+                                    findFirst {
+                                        for ((index, child) in children.withIndex()) {
+                                            if (child.className == "cc_timeTable") {
+                                                if (index == 1)
+                                                    firstShift = true
+                                                else secondShift = true
+                                            }
+                                        }
+                                    }
+                                }
+                                Pair(firstShift, secondShift)
+                            }
+                            else -> throw UnknownError("Shifts detection failure: too many tables")
+                        }
+                    }
+                    if (availableShifts.first) { // parse first shift
+                        table {
+                            tbody {
+                                findFirst {
+                                    tr {
+                                        findAll {
+                                            this.parseTimetable(false)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (availableShifts.second) {
+                        if (availableShifts.first) { // First shift timetable is also present
+                            table {
+                                findSecond {
+                                    tbody {
+                                        tr {
+                                            findAll {
+                                                this.parseTimetable(true)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            table {
+                                findFirst {
+                                    tbody {
+                                        tr {
+                                            findAll {
+                                                this.parseTimetable(true)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Result.success(TwoShiftsTimetable(
+                    DayOfWeek.values().filter { it != DayOfWeek.SUNDAY }
+                        .associateWith {
+                            Pair(
+                                firstShiftTimetable[it]!!.toList().toTypedArray(),
+                                secondShiftTimetable[it]!!.toList().toTypedArray()
+                            )
+                        })
+                )
             }
         }
     }
