@@ -458,4 +458,70 @@ internal class SchoolsByParserTest {
             }
         }
     }
+
+    @Nested
+    @DisplayName("Pupils data tests")
+    inner class PupilsDataTests {
+        @Test
+        @DisplayName("Get pupil's class using valid pupil ID and valid credentials")
+        fun testPupilClassValidPupilIDValidCredentials() = runBlocking {
+            val result = SchoolsByParser.PUPIL.getPupilClass(pupilID = 100135, validCredentials)
+            assertAll({
+                assert(result.isSuccess)
+            }, {
+                assert(result.getOrThrow().id == 8)
+                assert(result.getOrThrow().classTitle == "11 \"А\"")
+                assert(result.getOrThrow().classTeacherID == 108105)
+            })
+        }
+
+        @Test
+        @DisplayName("Get pupil's class using invalid pupil ID and valid credentials")
+        fun testPupilClassInvalidPupilIDValidCredentials() = runBlocking {
+            val result = SchoolsByParser.PUPIL.getPupilClass(pupilID = -1, validCredentials)
+            assert(result.isFailure)
+            assert(result.exceptionOrNull() is PageNotFound)
+        }
+
+        @Test
+        @DisplayName("Get pupil's class using valid pupil ID and invalid credentials")
+        fun testPupilClassValidPupilIDInvalidCredentials() = runBlocking {
+            val result = SchoolsByParser.PUPIL.getPupilClass(pupilID = 100135, invalidCredentials)
+            assert(result.isFailure)
+            assert(result.exceptionOrNull() is BadSchoolsByCredentials)
+        }
+    }
+
+    @Nested
+    @DisplayName("Parents data tests")
+    inner class ParentsDataTests {
+        @Test
+        @DisplayName("Get parent's pupils using valid parent ID and valid credentials")
+        fun testParentsPupilsListValidParentIDValidCredentials() = runBlocking {
+            val result = SchoolsByParser.PARENT.getPupils(parentID = 105189, validCredentials)
+            assert(result.isSuccess)
+            assertContentEquals(
+                result.getOrThrow(), arrayListOf(
+                    Pupil(100140, Name("Алеся", null, "Соловьева"), 8),
+                    Pupil(100148, Name("Константин", null, "Соловьев"), 6)
+                )
+            )
+        }
+
+        @Test
+        @DisplayName("Get parents pupils using invalid parent ID and valid credentials")
+        fun testParentsPupilsInvalidParentIDValidCredentials() = runBlocking {
+            val result = SchoolsByParser.PARENT.getPupils(parentID = -1, validCredentials)
+            assert(result.isFailure)
+            assert(result.exceptionOrNull() is PageNotFound)
+        }
+
+        @Test
+        @DisplayName("Get pupil's class using valid pupil ID and invalid credentials")
+        fun testPupilClassValidPupilIDInvalidCredentials() = runBlocking {
+            val result = SchoolsByParser.PARENT.getPupils(parentID = 105189, invalidCredentials)
+            assert(result.isFailure)
+            assert(result.exceptionOrNull() is BadSchoolsByCredentials)
+        }
+    }
 }

@@ -204,7 +204,8 @@ class SchoolsByParser {
                     val name = Name.fromString(nameText)
                         ?: return@htmlDocument Result.failure(UnknownError("Name detection failed: bad input: \'$nameText\'"))
                     val type = SchoolsByUserType.valueOf(
-                        response.request.url.encodedPath.replaceAfterLast('/', "").removeSuffix("/")
+                        response.request.url.encodedPath.replace("director", "administration").replaceAfterLast('/', "")
+                            .removeSuffix("/")
                             .replaceBefore('/', "").removePrefix("/").uppercase()
                     )
                     Result.success(User(userID, type, name))
@@ -382,6 +383,9 @@ class SchoolsByParser {
         }
     }
 
+    /**
+     * Functions related to Teachers
+     */
     object TEACHER {
 
         /**
@@ -459,9 +463,9 @@ class SchoolsByParser {
                                 withClass = "lesson"
                                 findAll {
                                     forEach {
-                                        val name = b { findFirst { ownText } }
+                                        val name = it.b { findFirst { ownText } }
                                         val classID =
-                                            a { findFirst { this.attribute("href") } }.removePrefix("/class/")
+                                            it.a { findFirst { this.attribute("href") } }.removePrefix("/class/")
                                                 .toInt()
                                         if (!isSecondShift) {
                                             firstShiftTimetable[DayOfWeek.values()[index - 2]] =
@@ -569,6 +573,96 @@ class SchoolsByParser {
                             )
                         })
                 )
+            }
+        }
+    }
+
+    /**
+     * Functions related to pupils
+     */
+    object PUPIL {
+
+        /**
+         * Returns [SchoolClass] that given pupil is a part of. Makes two requests to get class teacher ID.
+         */
+        suspend fun getPupilClass(pupilID: Int, credentials: Credentials): Result<SchoolClass> {
+            return wrapReturn("${schoolSubdomain}pupil/$pupilID", credentials) {
+                var classID: Int = -1
+                htmlDocument(it.receive<String>()) {
+                    div {
+                        withClass = "pp_line"
+                        findAll {
+                            a {
+                                withAttributeKey = "href"
+                                findAll {
+                                    for (a in this) {
+                                        if (a.ownText.matches(Regex("^\\d{1,2}-го\\s\".\""))) {
+                                            classID = a.attribute("href").replaceBeforeLast('/', "").drop(1).toInt()
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (classID == -1)
+                    return@wrapReturn Result.failure(UnknownError("Class ID was not found"))
+                val schoolClass = CLASS.getClassData(classID, credentials)
+                if (schoolClass.isSuccess)
+                    return@wrapReturn Result.success(schoolClass.getOrThrow())
+                else return@wrapReturn Result.failure(schoolClass.exceptionOrNull()!!)
+            }
+        }
+    }
+
+    /**
+     * Functions, related to parents
+     */
+    object PARENT {
+        /**
+         * Returns list of parent's pupils
+         */
+        suspend fun getPupils(parentID: Int, credentials: Credentials): Result<List<Pupil>> {
+            return wrapReturn("${schoolSubdomain}parent/$parentID", credentials) {
+                htmlDocument(it.receive<String>()) {
+                    val pupils = mutableListOf<Pupil>()
+                    div {
+                        withClass = "pp_line"
+                        div {
+                            withClass = "cnt"
+                            table {
+                                tr {
+                                    findAll {
+                                        for (row in this) {
+                                            val (name, pupilID) = row.a {
+                                                withClass = "user_type_1"
+                                                findFirst {
+                                                    Pair(
+                                                        Name.fromString(ownText),
+                                                        attribute("href").replaceBeforeLast("/", "").removePrefix("/")
+                                                    )
+                                                }
+                                            }
+                                            val classID = row.a {
+                                                findSecond {
+                                                    if (className.isEmpty())
+                                                        attribute("href").replaceBeforeLast("/", "").removePrefix("/")
+                                                            .toIntOrNull()
+                                                    else null
+                                                }
+                                            }
+                                            if (name != null && pupilID.toIntOrNull() != null && classID != null) {
+                                                pupils.add(Pupil(pupilID.toInt(), name, classID))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Result.success(pupils)
+                }
             }
         }
     }

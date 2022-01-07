@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.neitex"
-version = "0.0.1"
+version = "0.0.3"
 val libraryVersion = version.toString()
 
 repositories {
