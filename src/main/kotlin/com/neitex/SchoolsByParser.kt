@@ -118,7 +118,7 @@ class SchoolsByParser {
                             append("password", password)
                         }) {
                         cookie("csrftoken", firstCSRFtoken.value)
-                        header(HttpHeaders.Referrer, schoolSubdomain)
+                        header(HttpHeaders.Referrer, "https://schools.by/login")
                     }
                     if ((response.headers["location"]
                             ?: "https://schools.by/login").contains("login")
