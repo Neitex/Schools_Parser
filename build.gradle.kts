@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.neitex"
-version = "0.0.3"
+version = "0.0.4"
 val libraryVersion = version.toString()
 
 repositories {
@@ -29,7 +29,7 @@ tasks.test {
 }
 
 tasks.withType<KotlinCompile> {
-    kotlinOptions.jvmTarget = "11"
+    kotlinOptions.jvmTarget = "1.8"
 }
 
 application {
