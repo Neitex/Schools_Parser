@@ -88,7 +88,7 @@ class SchoolsByParser {
             } catch (e: HttpConnectTimeoutException) {
                 Result.failure(SchoolsByUnavailable("Schools.by did not respond", e))
             } catch (e: ElementNotFoundException) {
-                Result.failure(UnknownError("Page parsing failed: Exception: \'${e.message}\'"))
+                Result.failure(UnknownError("Page parsing failed: Exception: \'${e.message}\'; Stack trace: ${e.stackTraceToString()}"))
             } catch (e: UnknownError) {
                 Result.failure(e)
             }
@@ -441,7 +441,6 @@ class SchoolsByParser {
 
                 fun List<DocElement>.parseTimetable(isSecondShift: Boolean = false) {
                     for (row in this) {
-                        println(row)
                         val place = row.td {
                             withClass = "num"; findFirst {
                             ownText.removeSuffix(".").toIntOrNull()
@@ -463,10 +462,17 @@ class SchoolsByParser {
                                 withClass = "lesson"
                                 findAll {
                                     forEach {
-                                        val name = it.b { findFirst { ownText } }
+                                        val name = try {
+                                            it.b { findFirst { ownText } }
+                                        } catch (e: ElementNotFoundException) {
+                                            it.a { withClass = "subject"; findFirst { ownText } }
+                                        }
                                         val classID =
-                                            it.a { findFirst { this.attribute("href") } }.removePrefix("/class/")
-                                                .toInt()
+                                            it.span {
+                                                withClass = "class"
+                                                a { findFirst { this.attribute("href") } }.removePrefix("/class/")
+                                                    .toInt()
+                                            }
                                         if (!isSecondShift) {
                                             firstShiftTimetable[DayOfWeek.values()[index - 2]] =
                                                 (firstShiftTimetable[DayOfWeek.values()[index - 2]]
