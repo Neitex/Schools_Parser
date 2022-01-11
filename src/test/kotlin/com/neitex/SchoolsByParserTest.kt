@@ -98,7 +98,7 @@ internal class SchoolsByParserTest {
                 validCredentials
             ) // Credentials from Schools.by demo version
             assert(result.isSuccess)
-            assert(result.getOrThrow() == 105190)
+            assert(result.getOrThrow() == 105190 || result.getOrThrow() == 104631)
         }
 
         @Test
@@ -421,6 +421,29 @@ internal class SchoolsByParserTest {
                 }, {
                     assert(unpackedResult.saturday.second.isEmpty())
                     assert(unpackedResult.saturday.second.isEmpty())
+                }
+            )
+        }
+
+        @Test
+        @DisplayName("Get timetable with links instead of b with valid teacher ID and valid credentials")
+        fun testTimetableLinksValidTeacherIDValidCredentials() = runBlocking {
+            val result = SchoolsByParser.TEACHER.getTimetable(104631, validCredentials)
+            assertAll(
+                {
+                    assert(result.isSuccess)
+                }, {
+                    val timetable = result.getOrThrow()
+                    assertContentEquals(
+                        timetable.wednesday.first, arrayOf(
+                            Lesson(4, testConstraintsList[4], "Биология", 8, 104631)
+                        )
+                    )
+                    assertContentEquals(
+                        timetable.thursday.first, arrayOf(
+                            Lesson(5, testConstraintsList[5], "Биология", 8, 104631)
+                        )
+                    )
                 }
             )
         }
