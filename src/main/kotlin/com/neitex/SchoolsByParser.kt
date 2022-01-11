@@ -18,11 +18,6 @@ import java.time.DayOfWeek
 internal fun HttpResponse.checkCredentialsClear(): Boolean =
     this.setCookie().find { it.name == "sessionid" && it.value == "" } == null
 
-internal fun HttpRequestBuilder.applyCredentials(credentials: Credentials) = this.apply {
-    cookie("csrftoken", credentials.csrfToken)
-    cookie("sessionid", credentials.sessionID)
-}
-
 class SchoolsByParser {
     companion object {
         private var client: HttpClient by mutableLazy {
@@ -30,7 +25,7 @@ class SchoolsByParser {
                 engine {
                     requestTimeout = 10000
                     maxConnectionsCount = 50
-                    threadsCount = 50
+                    threadsCount = 10
                     endpoint {
                         connectAttempts = 2
                         connectTimeout = 10000
@@ -76,7 +71,8 @@ class SchoolsByParser {
         ): Result<T> {
             return try {
                 val response = client.get<HttpResponse>(requestUrl) {
-                    applyCredentials(credentials)
+                    cookie("csrftoken", credentials.csrfToken)
+                    cookie("sessionid", credentials.sessionID)
                 }
                 if (!response.checkCredentialsClear() || response.request.url.toString().contains("already-redirected"))
                     return Result.failure(BadSchoolsByCredentials())
@@ -145,7 +141,8 @@ class SchoolsByParser {
         suspend fun checkCookies(credentials: Credentials): Result<Boolean> {
             return try {
                 val response = client.get<HttpResponse>(schoolSubdomain) {
-                    applyCredentials(credentials)
+                    cookie("csrftoken", credentials.csrfToken)
+                    cookie("sessionid", credentials.sessionID)
                 }
                 Result.success(response.setCookie().find {
                     it.name == "sessionid" && it.value == ""
@@ -171,7 +168,8 @@ class SchoolsByParser {
                 expectSuccess = false
             }.use {
                 it.get<HttpResponse>("https://schools.by/login") {
-                    applyCredentials(credentials)
+                    cookie("csrftoken", credentials.csrfToken)
+                    cookie("sessionid", credentials.sessionID)
                 }
             }
             if (!response.checkCredentialsClear())
@@ -441,7 +439,6 @@ class SchoolsByParser {
 
                 fun List<DocElement>.parseTimetable(isSecondShift: Boolean = false) {
                     for (row in this) {
-                        println(row)
                         val place = row.td {
                             withClass = "num"; findFirst {
                             ownText.removeSuffix(".").toIntOrNull()
