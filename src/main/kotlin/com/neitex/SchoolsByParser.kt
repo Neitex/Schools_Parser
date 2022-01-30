@@ -1,9 +1,9 @@
 package com.neitex
 
+
 import io.ktor.client.*
-import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
-import io.ktor.client.features.*
+import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
@@ -14,6 +14,21 @@ import it.skrape.selects.ElementNotFoundException
 import it.skrape.selects.html5.*
 import java.net.http.HttpConnectTimeoutException
 import java.time.DayOfWeek
+import kotlin.collections.List
+import kotlin.collections.associateWith
+import kotlin.collections.filter
+import kotlin.collections.find
+import kotlin.collections.forEach
+import kotlin.collections.forEachIndexed
+import kotlin.collections.joinToString
+import kotlin.collections.mutableListOf
+import kotlin.collections.mutableMapOf
+import kotlin.collections.plus
+import kotlin.collections.set
+import kotlin.collections.toList
+import kotlin.collections.toSet
+import kotlin.collections.toTypedArray
+import kotlin.collections.withIndex
 
 internal fun HttpResponse.checkCredentialsClear(): Boolean =
     this.setCookie().find { it.name == "sessionid" && it.value == "" } == null
@@ -70,7 +85,8 @@ class SchoolsByParser {
             returnValue: suspend (HttpResponse) -> Result<T>
         ): Result<T> {
             return try {
-                val response = client.get<HttpResponse>(requestUrl) {
+                val response = client.get {
+                    url(requestUrl)
                     cookie("csrftoken", credentials.csrfToken)
                     cookie("sessionid", credentials.sessionID)
                 }
@@ -102,11 +118,11 @@ class SchoolsByParser {
         suspend fun getLoginCookies(username: String, password: String): Result<Credentials> {
             try {
                 val firstCSRFtoken = run {
-                    val response = client.get<HttpResponse>("https://schools.by/login")
+                    val response = client.get("https://schools.by/login")
                     response.setCookie().find { it.name == "csrftoken" }
                 } ?: return Result.failure(UnknownError("First stage of login failed: csrftoken cookie was not found"))
                 val (secondCSRFtoken, sessionid) = run {
-                    val response = client.submitForm<HttpResponse>(
+                    val response = client.submitForm(
                         url = "https://schools.by/login",
                         formParameters = Parameters.build {
                             append("csrfmiddlewaretoken", firstCSRFtoken.value)
@@ -140,7 +156,8 @@ class SchoolsByParser {
          */
         suspend fun checkCookies(credentials: Credentials): Result<Boolean> {
             return try {
-                val response = client.get<HttpResponse>(schoolSubdomain) {
+                val response = client.get {
+                    url(schoolSubdomain)
                     cookie("csrftoken", credentials.csrfToken)
                     cookie("sessionid", credentials.sessionID)
                 }
@@ -167,7 +184,8 @@ class SchoolsByParser {
                 followRedirects = false
                 expectSuccess = false
             }.use {
-                it.get<HttpResponse>("https://schools.by/login") {
+                it.get {
+                    url("https://schools.by/login")
                     cookie("csrftoken", credentials.csrfToken)
                     cookie("sessionid", credentials.sessionID)
                 }
@@ -190,7 +208,7 @@ class SchoolsByParser {
          */
         suspend fun getBasicUserInfo(userID: Int, credentials: Credentials): Result<User> {
             return wrapReturn("${schoolSubdomain}user/$userID", credentials) { response ->
-                htmlDocument(response.receive<String>()) {
+                htmlDocument(response.bodyAsText()) {
                     val nameText = div {
                         withClass = "title_box"
                         h1 {
@@ -221,7 +239,7 @@ class SchoolsByParser {
          */
         suspend fun getClassData(classID: Int, credentials: Credentials): Result<SchoolClass> {
             return wrapReturn("${schoolSubdomain}class/$classID", credentials) { response ->
-                htmlDocument(response.receive<String>()) {
+                htmlDocument(response.bodyAsText()) {
                     val classTitle = div {
                         withClass = "title_box"
                         h1 {
@@ -257,7 +275,7 @@ class SchoolsByParser {
         suspend fun getPupilsList(classID: Int, credentials: Credentials): Result<List<Pupil>> {
             return wrapReturn("${schoolSubdomain}class/$classID/pupils", credentials) { response ->
                 val pupilsList = mutableListOf<Pupil>()
-                htmlDocument(response.receive<String>()) {
+                htmlDocument(response.bodyAsText()) {
                     div {
                         withClass = "pupil"
                         findAll {
@@ -296,7 +314,7 @@ class SchoolsByParser {
         ): Result<Pair<Boolean?, Timetable>> {
             return wrapReturn("${schoolSubdomain}class/$classID/timetable", credentials) {
                 val timetableMap = mutableMapOf<DayOfWeek, Array<Lesson>>()
-                htmlDocument(it.receive<String>()) {
+                htmlDocument(it.bodyAsText()) {
                     div {
                         withClass = "ttb_boxes"
                         div {
@@ -392,7 +410,7 @@ class SchoolsByParser {
         suspend fun getClassForTeacher(teacherID: Int, credentials: Credentials): Result<SchoolClass?> {
             return wrapReturn("${schoolSubdomain}teacher/$teacherID", credentials) {
                 var schoolClass: SchoolClass? = null
-                htmlDocument(it.receive<String>()) {
+                htmlDocument(it.bodyAsText()) {
                     div {
                         withClass = "pp_line"
                         findAll {
@@ -503,7 +521,7 @@ class SchoolsByParser {
                     }
                 }
 
-                htmlDocument(it.receive<String>()) {
+                htmlDocument(it.bodyAsText()) {
                     val availableShifts = run {
                         when (div { withClass = "cc_timeTable"; findAll { this.size } }) {
                             2 -> Pair(true, true)
@@ -592,7 +610,7 @@ class SchoolsByParser {
         suspend fun getPupilClass(pupilID: Int, credentials: Credentials): Result<SchoolClass> {
             return wrapReturn("${schoolSubdomain}pupil/$pupilID", credentials) {
                 var classID: Int = -1
-                htmlDocument(it.receive<String>()) {
+                htmlDocument(it.bodyAsText()) {
                     div {
                         withClass = "pp_line"
                         findAll {
@@ -629,7 +647,7 @@ class SchoolsByParser {
          */
         suspend fun getPupils(parentID: Int, credentials: Credentials): Result<List<Pupil>> {
             return wrapReturn("${schoolSubdomain}parent/$parentID", credentials) {
-                htmlDocument(it.receive<String>()) {
+                htmlDocument(it.bodyAsText()) {
                     val pupils = mutableListOf<Pupil>()
                     div {
                         withClass = "pp_line"

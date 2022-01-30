@@ -7,21 +7,25 @@ plugins {
 }
 
 group = "com.neitex"
-version = "0.0.7"
+version = "0.0.8"
 val libraryVersion = version.toString()
 
 repositories {
     mavenCentral()
+    maven { url = uri("https://jitpack.io") }
+    maven { url = uri("https://maven.pkg.jetbrains.space/public/p/ktor/eap") }
 }
 
 dependencies {
-    implementation("io.ktor:ktor-client-core:1.6.7")
-    implementation("io.ktor:ktor-client-cio:1.6.7")
-    implementation("io.ktor:ktor-client-logging:1.6.7")
+    implementation("io.ktor:ktor-client-core:2.0.0-eap-256")
+    implementation("io.ktor:ktor-client-cio:2.0.0-eap-256")
+    implementation("io.ktor:ktor-client-logging:2.0.0-eap-256")
     implementation("ch.qos.logback:logback-classic:1.2.10")
-    implementation("it.skrape:skrapeit:1.1.7")
+    implementation("it.skrape:skrapeit:1.2.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.8.2")
     testImplementation(kotlin("test"))
+    implementation(kotlin("stdlib-jdk8"))
 }
 
 tasks.test {
