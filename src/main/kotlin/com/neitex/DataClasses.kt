@@ -65,7 +65,8 @@ data class Lesson(
     val timeConstraints: TimeConstraints,
     val title: String,
     val classID: Int,
-    val teacherID: Int?
+    val teacherID: Int?,
+    val journalID: Int?
 )
 
 class Timetable {

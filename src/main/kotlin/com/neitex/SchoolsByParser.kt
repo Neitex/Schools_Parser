@@ -58,6 +58,7 @@ class SchoolsByParser {
 
         /**
          * Closes Ktor Http Client. After that all resources, used by library will be freed and library will become unusable
+         * (unless you set a new HTTP Client manually)
          */
         fun closeHttpClient() {
             client.close()
@@ -371,8 +372,26 @@ class SchoolsByParser {
 
                                                         return@td titles.toSet().joinToString(" / ")
                                                     }
+                                                    val journalID = try {
+                                                        doc.a {
+                                                            withClass = "subj"
+                                                            findFirst {
+                                                                attribute("href").removePrefix("/journal/")
+                                                                    .toIntOrNull()
+                                                            }
+                                                        }
+                                                    } catch (e: ElementNotFoundException) {
+                                                        null
+                                                    }
                                                     if (add)
-                                                        dayTimetable += Lesson(num.toShort(), time, name, classID, null)
+                                                        dayTimetable += Lesson(
+                                                            num.toShort(),
+                                                            time,
+                                                            name,
+                                                            classID,
+                                                            null,
+                                                            journalID
+                                                        )
                                                 }
                                             }
                                         }
@@ -478,10 +497,17 @@ class SchoolsByParser {
                                 withClass = "lesson"
                                 findAll {
                                     forEach {
-                                        val name = try {
-                                            it.b { findFirst { ownText } }
+                                        val (name, journalID) = try {
+                                            it.a {
+                                                withClass = "subject"; findFirst {
+                                                Pair(
+                                                    ownText,
+                                                    attribute("href").removePrefix("/journal/").toIntOrNull()
+                                                )
+                                            }
+                                            }
                                         } catch (e: ElementNotFoundException) {
-                                            it.a { withClass = "subject"; findFirst { ownText } }
+                                            it.b { findFirst { Pair(ownText, null) } }
                                         }
                                         val classID =
                                             it.span {
@@ -489,6 +515,7 @@ class SchoolsByParser {
                                                 a { findFirst { this.attribute("href") } }.removePrefix("/class/")
                                                     .toInt()
                                             }
+
                                         if (!isSecondShift) {
                                             firstShiftTimetable[DayOfWeek.values()[index - 2]] =
                                                 (firstShiftTimetable[DayOfWeek.values()[index - 2]]
@@ -498,7 +525,8 @@ class SchoolsByParser {
                                                         bells,
                                                         unfoldLessonTitle(name),
                                                         classID,
-                                                        teacherID
+                                                        teacherID,
+                                                        journalID
                                                     )
                                                 }
                                         } else {
@@ -510,7 +538,8 @@ class SchoolsByParser {
                                                         bells,
                                                         unfoldLessonTitle(name),
                                                         classID,
-                                                        teacherID
+                                                        teacherID,
+                                                        journalID
                                                     )
                                                 }
                                         }

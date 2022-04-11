@@ -245,50 +245,50 @@ internal class SchoolsByParserTest {
                 {
                     assertContentEquals(
                         timetable.monday, arrayOf(
-                            Lesson(1, testConstraintsList[1], "Белорусская литература", 8, null),
-                            Lesson(2, testConstraintsList[2], "Белорусский язык", 8, null),
-                            Lesson(3, testConstraintsList[3], "История Беларуси", 8, null),
-                            Lesson(4, testConstraintsList[4], "Математика", 8, null),
-                            Lesson(5, testConstraintsList[5], "Английский язык", 8, null),
-                            Lesson(6, testConstraintsList[6], "Информатика", 8, null),
+                            Lesson(1, testConstraintsList[1], "Белорусская литература", 8, null, 377660),
+                            Lesson(2, testConstraintsList[2], "История Беларуси", 8, null, 377654),
+                            Lesson(3, testConstraintsList[3], "Белорусский язык", 8, null, 377659),
+                            Lesson(4, testConstraintsList[4], "Математика", 8, null, 100131),
+                            Lesson(5, testConstraintsList[5], "Английский язык", 8, null, 100121),
+                            Lesson(6, testConstraintsList[6], "Информатика", 8, null, 100129),
                         )
                     )
                 },
                 {
                     assertContentEquals(
                         timetable.tuesday, arrayOf(
-                            Lesson(1, testConstraintsList[1], "Русская литература", 8, null),
-                            Lesson(2, testConstraintsList[2], "Русский язык", 8, null),
-                            Lesson(3, testConstraintsList[3], "Обществоведение", 8, null),
-                            Lesson(4, testConstraintsList[4], "Физика", 8, null),
-                            Lesson(5, testConstraintsList[5], "Физическая культура и здоровье", 8, null)
+                            Lesson(1, testConstraintsList[1], "Русская литература", 8, null, 100135),
+                            Lesson(2, testConstraintsList[2], "Русский язык", 8, null, 100136),
+                            Lesson(3, testConstraintsList[3], "Обществоведение", 8, null, 377651),
+                            Lesson(4, testConstraintsList[4], "Физика", 8, null, 100138),
+                            Lesson(5, testConstraintsList[5], "Физическая культура и здоровье", 8, null, 100139)
                         )
                     )
                 }, {
                     assertContentEquals(
                         timetable.wednesday, arrayOf(
-                            Lesson(2, testConstraintsList[2], "Всемирная История", 8, null),
-                            Lesson(3, testConstraintsList[3], "География", 8, null),
-                            Lesson(4, testConstraintsList[4], "Биология", 8, null),
-                            Lesson(5, testConstraintsList[5], "Английский язык", 8, null)
+                            Lesson(2, testConstraintsList[2], "Всемирная История", 8, null, 100126),
+                            Lesson(3, testConstraintsList[3], "География", 8, null, 100127),
+                            Lesson(4, testConstraintsList[4], "Биология", 8, null, 100125),
+                            Lesson(5, testConstraintsList[5], "Английский язык", 8, null, 100121)
                         )
                     )
                 }, {
                     assertContentEquals(
                         timetable.thursday, arrayOf(
-                            Lesson(3, testConstraintsList[3], "Математика", 8, null),
-                            Lesson(4, testConstraintsList[4], "Химия", 8, null),
-                            Lesson(5, testConstraintsList[5], "Биология", 8, null),
-                            Lesson(6, testConstraintsList[6], "Информатика", 8, null),
-                            Lesson(7, testConstraintsList[7], "Физическая культура и здоровье", 8, null)
+                            Lesson(3, testConstraintsList[3], "Математика", 8, null, 100131),
+                            Lesson(4, testConstraintsList[4], "Химия", 8, null, 100140),
+                            Lesson(5, testConstraintsList[5], "Биология", 8, null, 100125),
+                            Lesson(6, testConstraintsList[6], "Информатика", 8, null, 100129),
+                            Lesson(7, testConstraintsList[7], "Физическая культура и здоровье", 8, null, 100139)
                         )
                     )
                 }, {
                     assertContentEquals(
                         timetable.friday, arrayOf(
-                            Lesson(2, testConstraintsList[2], "Математика", 8, null),
-                            Lesson(3, testConstraintsList[3], "Химия", 8, null),
-                            Lesson(4, testConstraintsList[4], "Английский язык", 8, null)
+                            Lesson(2, testConstraintsList[2], "Математика", 8, null, 100131),
+                            Lesson(3, testConstraintsList[3], "Химия", 8, null, 100140),
+                            Lesson(4, testConstraintsList[4], "Английский язык", 8, null, 100121)
                         )
                     )
                 }, {
@@ -396,16 +396,16 @@ internal class SchoolsByParserTest {
                 }, {
                     assertContentEquals(
                         unpackedResult.monday.first, arrayOf(
-                            Lesson(1, testConstraintsList[1], "Белорусская литература", 8, 108105),
-                            Lesson(2, testConstraintsList[2], "Белорусский язык", 8, 108105),
-                            Lesson(3, testConstraintsList[3], "Английский язык", 6, 108105)
+                            Lesson(1, testConstraintsList[1], "Белорусская литература", 8, 108105, 377660),
+                            Lesson(3, testConstraintsList[3], "Английский язык", 6, 108105, 74),
+                            Lesson(3, testConstraintsList[3], "Белорусский язык", 8, 108105, 377659),
                         )
                     )
                     assert(unpackedResult.monday.second.isEmpty())
                 }, {
                     assertContentEquals(
                         unpackedResult.tuesday.first, arrayOf(
-                            Lesson(4, testConstraintsList[4], "Английский язык", 6, 108105)
+                            Lesson(4, testConstraintsList[4], "Английский язык", 6, 108105, 74)
                         )
                     )
                     assert(unpackedResult.tuesday.second.isEmpty())
@@ -436,13 +436,31 @@ internal class SchoolsByParserTest {
                     val timetable = result.getOrThrow()
                     assertContentEquals(
                         timetable.wednesday.first, arrayOf(
-                            Lesson(4, testConstraintsList[4], "Биология", 8, 104631)
+                            Lesson(4, testConstraintsList[4], "Биология", 8, 104631, 100125)
                         )
                     )
                     assertContentEquals(
                         timetable.thursday.first, arrayOf(
-                            Lesson(5, testConstraintsList[5], "Биология", 8, 104631)
+                            Lesson(5, testConstraintsList[5], "Биология", 8, 104631, 100125)
                         )
+                    )
+                    assertContentEquals(
+                        timetable.monday.second, arrayOf()
+                    )
+                    assertContentEquals(
+                        timetable.tuesday.second, arrayOf()
+                    )
+                    assertContentEquals(
+                        timetable.wednesday.second, arrayOf()
+                    )
+                    assertContentEquals(
+                        timetable.thursday.second, arrayOf()
+                    )
+                    assertContentEquals(
+                        timetable.friday.second, arrayOf()
+                    )
+                    assertContentEquals(
+                        timetable.saturday.second, arrayOf()
                     )
                 }
             )
