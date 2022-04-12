@@ -389,7 +389,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get teacher's timetable using valid teacher ID and valid credentials")
         fun testTeacherTimetableValidTeacherIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.TEACHER.getTimetable(108105, validParentCredentials)
+            val result = SchoolsByParser.TEACHER.getTimetable(108105, validTeacherCredentials)
             val unpackedResult = result.getOrThrow()
             assertAll(
                 {
@@ -438,12 +438,12 @@ internal class SchoolsByParserTest {
                     val timetable = result.getOrThrow()
                     assertContentEquals(
                         arrayOf(
-                            Lesson(4, testConstraintsList[4], "Биология", 8, 104631, 100125)
+                            Lesson(4, testConstraintsList[4], "Биология", 8, 104631, null)
                         ), timetable.wednesday.first
                     )
                     assertContentEquals(
                         arrayOf(
-                            Lesson(5, testConstraintsList[5], "Биология", 8, 104631, 100125)
+                            Lesson(5, testConstraintsList[5], "Биология", 8, 104631, null)
                         ), timetable.thursday.first
                     )
                     assert(
