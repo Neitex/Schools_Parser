@@ -11,8 +11,10 @@ import kotlin.test.*
 
 @DisplayName("Schools.by parser tests")
 internal class SchoolsByParserTest {
-    private val validCredentials =
+    private val validParentCredentials =
         Credentials(csrfToken = System.getenv("csrftoken"), sessionID = System.getenv("sessionid"))
+    private val validTeacherCredentials =
+        Credentials(csrfToken = System.getenv("teacher_csrftoken"), sessionID = System.getenv("teacher_sessionid"))
     private val invalidCredentials = Credentials(csrfToken = "123", sessionID = "123")
 
     val testConstraintsList = listOf(
@@ -70,7 +72,7 @@ internal class SchoolsByParserTest {
         @DisplayName("Check valid cookies")
         fun testCookiesCheckWithValidCookies() = runBlocking {
             val result = SchoolsByParser.AUTH.checkCookies(
-                validCredentials
+                validParentCredentials
             ) // Credentials from Schools.by demo version
             assert(result.isSuccess)
             assert(result.getOrNull() == true)
@@ -95,7 +97,7 @@ internal class SchoolsByParserTest {
         @DisplayName("Get user ID from valid credentials")
         fun testGettingUserIDFromCredentials() = runBlocking {
             val result = SchoolsByParser.USER.getUserIDFromCredentials(
-                validCredentials
+                validParentCredentials
             ) // Credentials from Schools.by demo version
             assert(result.isSuccess)
             assert(result.getOrThrow() == 105190 || result.getOrThrow() == 104631)
@@ -114,7 +116,7 @@ internal class SchoolsByParserTest {
         fun testGettingUserDataUsingCredentialsAndUserID() = runBlocking {
             val result = SchoolsByParser.USER.getBasicUserInfo(
                 userID = 105190,
-                validCredentials
+                validParentCredentials
             ) // Credentials from Schools.by demo version
             assert(result.isSuccess)
             assert(
@@ -143,7 +145,7 @@ internal class SchoolsByParserTest {
         fun testGettingUserDataUsingNonExistentID() = runBlocking {
             val result = SchoolsByParser.USER.getBasicUserInfo(
                 userID = 0,
-                validCredentials
+                validParentCredentials
             ) // Credentials from Schools.by demo version
             assert(result.isFailure)
         }
@@ -153,7 +155,7 @@ internal class SchoolsByParserTest {
         fun testGettingUserDataUsingNonExistentIDAndInvalidCredentials() = runBlocking {
             val result = SchoolsByParser.USER.getBasicUserInfo(
                 userID = 0,
-                validCredentials
+                validParentCredentials
             ) // Credentials from Schools.by demo version
             assert(result.isFailure)
         }
@@ -165,9 +167,9 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get class data using valid class ID and valid credentials")
         fun testGettingClassDataValidClassIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.CLASS.getClassData(classID = 8, validCredentials)
+            val result = SchoolsByParser.CLASS.getClassData(classID = 8, validTeacherCredentials)
             assertTrue(result.isSuccess)
-            assertEquals(result.getOrThrow(), SchoolClass(8, 108105, "11 \"А\""))
+            assertEquals(SchoolClass(8, 108105, "11 \"А\""), result.getOrThrow())
         }
 
         @Test
@@ -188,11 +190,11 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get list of pupils using valid class ID and valid credentials")
         fun testGettingPupilsListValidClassIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.CLASS.getPupilsList(classID = 8, validCredentials)
+            val result = SchoolsByParser.CLASS.getPupilsList(classID = 8, validParentCredentials)
             assertAll(
                 { assert(result.isSuccess) }, {
                     assertContentEquals(
-                        result.getOrThrow(), listOf(
+                        listOf(
                             Pupil(100135, Name("Дмитрий", null, "Ильин"), 8),
                             Pupil(100119, Name("Елена", null, "Макеева"), 8),
                             Pupil(100139, Name("Борис", null, "Пономарёв"), 8),
@@ -201,7 +203,7 @@ internal class SchoolsByParserTest {
                             Pupil(100143, Name("Денис", null, "Шилин"), 8),
                             Pupil(100121, Name("Валерий", null, "Юрченко"), 8),
                             Pupil(100131, Name("Сергей", null, "Якушев"), 8)
-                        )
+                        ), result.getOrThrow()
                     )
                 }
             )
@@ -210,7 +212,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get list of pupils using invalid class ID and valid credentials")
         fun testGettingPupilsListInvalidClassIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.CLASS.getPupilsList(classID = (-1), validCredentials)
+            val result = SchoolsByParser.CLASS.getPupilsList(classID = (-1), validParentCredentials)
             assert(result.isFailure)
             assert(result.exceptionOrNull() is PageNotFound)
         }
@@ -234,7 +236,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get class timetable using valid class ID and valid credentials")
         fun testGettingTimetableValidClassIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.CLASS.getTimetable(classID = 8, validCredentials, guessShift = true)
+            val result = SchoolsByParser.CLASS.getTimetable(classID = 8, validTeacherCredentials, guessShift = true)
             assert(result.isSuccess)
             val timetable = result.getOrThrow().second
             assertAll(
@@ -244,55 +246,55 @@ internal class SchoolsByParserTest {
                 },
                 {
                     assertContentEquals(
-                        timetable.monday, arrayOf(
+                        arrayOf(
                             Lesson(1, testConstraintsList[1], "Белорусская литература", 8, null, 377660),
                             Lesson(2, testConstraintsList[2], "История Беларуси", 8, null, 377654),
                             Lesson(3, testConstraintsList[3], "Белорусский язык", 8, null, 377659),
                             Lesson(4, testConstraintsList[4], "Математика", 8, null, 100131),
                             Lesson(5, testConstraintsList[5], "Английский язык", 8, null, 100121),
                             Lesson(6, testConstraintsList[6], "Информатика", 8, null, 100129),
-                        )
+                        ), timetable.monday
                     )
                 },
                 {
                     assertContentEquals(
-                        timetable.tuesday, arrayOf(
+                        arrayOf(
                             Lesson(1, testConstraintsList[1], "Русская литература", 8, null, 100135),
                             Lesson(2, testConstraintsList[2], "Русский язык", 8, null, 100136),
                             Lesson(3, testConstraintsList[3], "Обществоведение", 8, null, 377651),
                             Lesson(4, testConstraintsList[4], "Физика", 8, null, 100138),
                             Lesson(5, testConstraintsList[5], "Физическая культура и здоровье", 8, null, 100139)
-                        )
+                        ), timetable.tuesday
                     )
                 }, {
                     assertContentEquals(
-                        timetable.wednesday, arrayOf(
+                        arrayOf(
                             Lesson(2, testConstraintsList[2], "Всемирная История", 8, null, 100126),
                             Lesson(3, testConstraintsList[3], "География", 8, null, 100127),
                             Lesson(4, testConstraintsList[4], "Биология", 8, null, 100125),
                             Lesson(5, testConstraintsList[5], "Английский язык", 8, null, 100121)
-                        )
+                        ), timetable.wednesday
                     )
                 }, {
                     assertContentEquals(
-                        timetable.thursday, arrayOf(
+                        arrayOf(
                             Lesson(3, testConstraintsList[3], "Математика", 8, null, 100131),
                             Lesson(4, testConstraintsList[4], "Химия", 8, null, 100140),
                             Lesson(5, testConstraintsList[5], "Биология", 8, null, 100125),
                             Lesson(6, testConstraintsList[6], "Информатика", 8, null, 100129),
                             Lesson(7, testConstraintsList[7], "Физическая культура и здоровье", 8, null, 100139)
-                        )
+                        ), timetable.thursday
                     )
                 }, {
                     assertContentEquals(
-                        timetable.friday, arrayOf(
+                        arrayOf(
                             Lesson(2, testConstraintsList[2], "Математика", 8, null, 100131),
                             Lesson(3, testConstraintsList[3], "Химия", 8, null, 100140),
                             Lesson(4, testConstraintsList[4], "Английский язык", 8, null, 100121)
-                        )
+                        ), timetable.friday
                     )
                 }, {
-                    assertContentEquals(timetable.saturday, arrayOf())
+                    assertContentEquals(arrayOf(), timetable.saturday)
                 }
             )
         }
@@ -308,7 +310,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get class timetable using invalid class ID and valid credentials")
         fun testTimetableInvalidClassIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.CLASS.getTimetable(classID = (-1), validCredentials)
+            val result = SchoolsByParser.CLASS.getTimetable(classID = (-1), validParentCredentials)
             assert(result.isFailure)
             assert(result.exceptionOrNull() is PageNotFound)
         }
@@ -320,7 +322,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get teacher's class using valid class teacher ID and valid credentials")
         fun testClassTeacherClassValidTeacherIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.TEACHER.getClassForTeacher(108105, validCredentials)
+            val result = SchoolsByParser.TEACHER.getClassForTeacher(108105, validTeacherCredentials)
             assertAll(
                 {
                     assertTrue(result.isSuccess)
@@ -335,7 +337,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get teacher's class using valid teacher ID with no class and valid credentials")
         fun testClassTeacherClassValidTeacherIDWithNoClassValidCredentials() = runBlocking {
-            val result = SchoolsByParser.TEACHER.getClassForTeacher(109035, validCredentials)
+            val result = SchoolsByParser.TEACHER.getClassForTeacher(109035, validParentCredentials)
             assertAll(
                 {
                     assertTrue(result.isSuccess)
@@ -348,7 +350,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get teacher's class using invalid teacher ID and valid credentials")
         fun testClassTeacherClassInvalidTeacherIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.TEACHER.getClassForTeacher(-1, validCredentials)
+            val result = SchoolsByParser.TEACHER.getClassForTeacher(-1, validParentCredentials)
             assertAll(
                 {
                     assertTrue(result.isFailure)
@@ -374,7 +376,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get teacher's class using pupil ID and valid credentials")
         fun testClassTeacherClassPupilIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.TEACHER.getClassForTeacher(100135, validCredentials)
+            val result = SchoolsByParser.TEACHER.getClassForTeacher(100135, validParentCredentials)
             assertAll(
                 {
                     assertTrue(result.isFailure)
@@ -387,7 +389,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get teacher's timetable using valid teacher ID and valid credentials")
         fun testTeacherTimetableValidTeacherIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.TEACHER.getTimetable(108105, validCredentials)
+            val result = SchoolsByParser.TEACHER.getTimetable(108105, validParentCredentials)
             val unpackedResult = result.getOrThrow()
             assertAll(
                 {
@@ -395,18 +397,18 @@ internal class SchoolsByParserTest {
                     assertNotNull(result.getOrNull())
                 }, {
                     assertContentEquals(
-                        unpackedResult.monday.first, arrayOf(
+                        arrayOf(
                             Lesson(1, testConstraintsList[1], "Белорусская литература", 8, 108105, 377660),
                             Lesson(3, testConstraintsList[3], "Английский язык", 6, 108105, 74),
                             Lesson(3, testConstraintsList[3], "Белорусский язык", 8, 108105, 377659),
-                        )
+                        ), unpackedResult.monday.first
                     )
                     assert(unpackedResult.monday.second.isEmpty())
                 }, {
                     assertContentEquals(
-                        unpackedResult.tuesday.first, arrayOf(
+                        arrayOf(
                             Lesson(4, testConstraintsList[4], "Английский язык", 6, 108105, 74)
-                        )
+                        ), unpackedResult.tuesday.first
                     )
                     assert(unpackedResult.tuesday.second.isEmpty())
                 }, {
@@ -428,39 +430,39 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get timetable with links instead of b with valid teacher ID and valid credentials")
         fun testTimetableLinksValidTeacherIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.TEACHER.getTimetable(104631, validCredentials)
+            val result = SchoolsByParser.TEACHER.getTimetable(104631, validParentCredentials)
             assertAll(
                 {
                     assert(result.isSuccess)
                 }, {
                     val timetable = result.getOrThrow()
                     assertContentEquals(
-                        timetable.wednesday.first, arrayOf(
+                        arrayOf(
                             Lesson(4, testConstraintsList[4], "Биология", 8, 104631, 100125)
-                        )
+                        ), timetable.wednesday.first
                     )
                     assertContentEquals(
-                        timetable.thursday.first, arrayOf(
+                        arrayOf(
                             Lesson(5, testConstraintsList[5], "Биология", 8, 104631, 100125)
-                        )
+                        ), timetable.thursday.first
                     )
-                    assertContentEquals(
-                        timetable.monday.second, arrayOf()
+                    assert(
+                        timetable.monday.second.isEmpty()
                     )
-                    assertContentEquals(
-                        timetable.tuesday.second, arrayOf()
+                    assert(
+                        timetable.tuesday.second.isEmpty()
                     )
-                    assertContentEquals(
-                        timetable.wednesday.second, arrayOf()
+                    assert(
+                        timetable.wednesday.second.isEmpty()
                     )
-                    assertContentEquals(
-                        timetable.thursday.second, arrayOf()
+                    assert(
+                        timetable.thursday.second.isEmpty()
                     )
-                    assertContentEquals(
-                        timetable.friday.second, arrayOf()
+                    assert(
+                        timetable.friday.second.isEmpty()
                     )
-                    assertContentEquals(
-                        timetable.saturday.second, arrayOf()
+                    assert(
+                        timetable.saturday.second.isEmpty()
                     )
                 }
             )
@@ -506,7 +508,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get pupil's class using valid pupil ID and valid credentials")
         fun testPupilClassValidPupilIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.PUPIL.getPupilClass(pupilID = 100135, validCredentials)
+            val result = SchoolsByParser.PUPIL.getPupilClass(pupilID = 100135, validParentCredentials)
             assertAll({
                 assert(result.isSuccess)
             }, {
@@ -519,7 +521,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get pupil's class using invalid pupil ID and valid credentials")
         fun testPupilClassInvalidPupilIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.PUPIL.getPupilClass(pupilID = -1, validCredentials)
+            val result = SchoolsByParser.PUPIL.getPupilClass(pupilID = -1, validParentCredentials)
             assert(result.isFailure)
             assert(result.exceptionOrNull() is PageNotFound)
         }
@@ -539,7 +541,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get parent's pupils using valid parent ID and valid credentials")
         fun testParentsPupilsListValidParentIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.PARENT.getPupils(parentID = 105189, validCredentials)
+            val result = SchoolsByParser.PARENT.getPupils(parentID = 105189, validParentCredentials)
             assert(result.isSuccess)
             assertContentEquals(
                 result.getOrThrow(), arrayListOf(
@@ -552,7 +554,7 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get parents pupils using invalid parent ID and valid credentials")
         fun testParentsPupilsInvalidParentIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.PARENT.getPupils(parentID = -1, validCredentials)
+            val result = SchoolsByParser.PARENT.getPupils(parentID = -1, validParentCredentials)
             assert(result.isFailure)
             assert(result.exceptionOrNull() is PageNotFound)
         }
