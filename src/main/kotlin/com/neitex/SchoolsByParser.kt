@@ -1,6 +1,5 @@
 package com.neitex
 
-
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
@@ -11,24 +10,13 @@ import io.ktor.http.*
 import it.skrape.core.htmlDocument
 import it.skrape.selects.DocElement
 import it.skrape.selects.ElementNotFoundException
+import it.skrape.selects.eachText
 import it.skrape.selects.html5.*
 import java.net.http.HttpConnectTimeoutException
 import java.time.DayOfWeek
-import kotlin.collections.List
-import kotlin.collections.associateWith
-import kotlin.collections.filter
-import kotlin.collections.find
-import kotlin.collections.forEach
-import kotlin.collections.forEachIndexed
-import kotlin.collections.joinToString
-import kotlin.collections.mutableListOf
-import kotlin.collections.mutableMapOf
-import kotlin.collections.plus
+import java.util.logging.Level
+import java.util.logging.Logger
 import kotlin.collections.set
-import kotlin.collections.toList
-import kotlin.collections.toSet
-import kotlin.collections.toTypedArray
-import kotlin.collections.withIndex
 
 internal fun HttpResponse.checkCredentialsClear(): Boolean =
     this.setCookie().find { it.name == "sessionid" && it.value == "" } == null
@@ -304,15 +292,15 @@ class SchoolsByParser {
 
         /**
          * Returns [Timetable] of class with [classID]
-         * @param guessShift Defines, should library make a guess on shift of this class (default: false).
-         * @return [Pair], where first element defines, whether this class is second shift or not
-         * (null if [guessShift] is false), and second element is timetable
+         * @param walkToJournals Defines, whether the library should walk into journals or not (i.e. to get teachers ID's).
+         * Walking will take **much, much** more times, but will provide you with the fullest information possible
+         * @see getClassShift returns true shift
          */
         suspend fun getTimetable(
             classID: Int,
             credentials: Credentials,
-            guessShift: Boolean = false
-        ): Result<Pair<Boolean?, Timetable>> {
+            walkToJournals: Boolean = false
+        ): Result<Timetable> {
             return wrapReturn("${schoolSubdomain}class/$classID/timetable", credentials) {
                 val timetableMap = mutableMapOf<DayOfWeek, Array<Lesson>>()
                 htmlDocument(it.bodyAsText()) {
@@ -401,21 +389,94 @@ class SchoolsByParser {
                             }
                         }
                     }
-                    return@htmlDocument Result.success(
-                        Pair(
-                            if (guessShift) {
-                                (timetableMap.filter { it.key != DayOfWeek.SATURDAY && it.value.find { it.place == 1.toShort() } != null }.values.find { it.find { it.place == 1.toShort() } != null }
-                                    ?.find { it.place == 1.toShort() }?.timeConstraints?.startHour)?.compareTo(12).let {
-                                        if (it != null)
-                                            it >= 12
-                                        else null
-                                    } ?: false
-                            } else null, Timetable(timetableMap)
-                        )
-                    )
+                    timetableMap
                 }
+                if (walkToJournals) {
+                    val cacheMap = mutableMapOf<Int, Array<Int>>() // JournalID, Array<TeacherID>
+                    for (entry in timetableMap) {
+                        for ((index, lesson) in entry.value.withIndex()) {
+                            if (lesson.journalID != null) {
+                                val teachers = if (!cacheMap.contains(lesson.journalID))
+                                    wrapReturn("${schoolSubdomain}/journal/${lesson.journalID}", credentials) {
+                                        val htmlTeachers = mutableListOf<Int>()
+                                        htmlDocument(it.bodyAsText()) {
+                                            div {
+                                                withClass = "journal_teachers"
+                                                div {
+                                                    withClass = "cnt"
+                                                    li {
+                                                        findAll {
+                                                            for (element in this) {
+                                                                (try {
+                                                                    element.a {
+                                                                        findFirst {
+                                                                            attribute("href").removePrefix("/teacher/")
+                                                                                .removePrefix("/administration/")
+                                                                                .removePrefix("/director/")
+                                                                                .toIntOrNull()
+                                                                        }
+                                                                    }
+                                                                } catch (e: ElementNotFoundException) {
+                                                                    null
+                                                                })?.also {
+                                                                    if (!try {
+                                                                            element.small {
+                                                                                findAll {
+                                                                                    eachText.any { it.contains("классн") }
+                                                                                }
+                                                                            }
+                                                                        } catch (e: ElementNotFoundException) {
+                                                                            false
+                                                                        }
+                                                                    )
+                                                                        htmlTeachers.add(it)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Result.success(htmlTeachers)
+                                    }.getOrElse {
+                                        Logger.getAnonymousLogger().log(
+                                            Level.WARNING,
+                                            "Failed to walk to journal with ID ${lesson.journalID}",
+                                            it
+                                        )
+                                        arrayListOf()
+                                    }.toSet().toTypedArray()
+                                        .also { cacheMap[lesson.journalID] = it }
+                                else cacheMap[lesson.journalID]!!
+                                entry.setValue(entry.value.toMutableList().apply {
+                                    removeAt(index)
+                                    add(index, lesson.copy(teacherID = teachers))
+                                }.toTypedArray())
+                            }
+                        }
+                    }
+                }
+                return@wrapReturn Result.success(Timetable(timetableMap))
             }
         }
+
+        /**
+         * Returns [Boolean] indicating, if given class studies in second shift or not
+         */
+        suspend fun getClassShift(classID: Int, credentials: Credentials): Result<Boolean> =
+            wrapReturn("${schoolSubdomain}/class/$classID/edit", credentials) {
+                htmlDocument(it.bodyAsText()) {
+                    select {
+                        withId = "id_smena"
+                        option {
+                            withAttribute = Pair("selected", "selected")
+                            findFirst {
+                                return@findFirst Result.success(attribute("value") != "1")
+                            }
+                        }
+                    }
+                }
+            }
     }
 
     /**
@@ -455,6 +516,11 @@ class SchoolsByParser {
             }
         }
 
+        /**
+         * Returns timetable for given [teacherID].
+         * !NOTE!: This method will not return other teachers in [Lesson] (i.e. other subgroups teachers).
+         * Please, call [CLASS.getTimetable] to get timetable with subgroups teachers
+         */
         suspend fun getTimetable(teacherID: Int, credentials: Credentials): Result<TwoShiftsTimetable> {
             return wrapReturn("${schoolSubdomain}teacher/$teacherID/timetable", credentials) {
                 val firstShiftTimetable = mutableMapOf<DayOfWeek, Array<Lesson>>(
@@ -515,7 +581,6 @@ class SchoolsByParser {
                                                 a { findFirst { this.attribute("href") } }.removePrefix("/class/")
                                                     .toInt()
                                             }
-
                                         if (!isSecondShift) {
                                             firstShiftTimetable[DayOfWeek.values()[index - 2]] =
                                                 (firstShiftTimetable[DayOfWeek.values()[index - 2]]
@@ -525,7 +590,7 @@ class SchoolsByParser {
                                                         bells,
                                                         unfoldLessonTitle(name),
                                                         classID,
-                                                        teacherID,
+                                                        arrayOf(teacherID),
                                                         journalID
                                                     )
                                                 }
@@ -538,7 +603,7 @@ class SchoolsByParser {
                                                         bells,
                                                         unfoldLessonTitle(name),
                                                         classID,
-                                                        teacherID,
+                                                        arrayOf(teacherID),
                                                         journalID
                                                     )
                                                 }

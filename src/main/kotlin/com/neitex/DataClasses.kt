@@ -65,9 +65,38 @@ data class Lesson(
     val timeConstraints: TimeConstraints,
     val title: String,
     val classID: Int,
-    val teacherID: Int?,
+    val teacherID: Array<Int>?,
     val journalID: Int?
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as Lesson
+
+        if (place != other.place) return false
+        if (timeConstraints != other.timeConstraints) return false
+        if (title != other.title) return false
+        if (classID != other.classID) return false
+        if (teacherID != null) {
+            if (other.teacherID == null) return false
+            if (!teacherID.contentEquals(other.teacherID)) return false
+        } else if (other.teacherID != null) return false
+        if (journalID != other.journalID) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = place.toInt()
+        result = 31 * result + timeConstraints.hashCode()
+        result = 31 * result + title.hashCode()
+        result = 31 * result + classID
+        result = 31 * result + (teacherID?.contentHashCode() ?: 0)
+        result = 31 * result + (journalID ?: 0)
+        return result
+    }
+}
 
 class Timetable {
     private var lessons: Map<DayOfWeek, Array<Lesson>>

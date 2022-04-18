@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.neitex"
-version = "0.0.9"
+version = "0.1.0"
 val libraryVersion = version.toString()
 
 repositories {
@@ -17,12 +17,12 @@ repositories {
 }
 
 dependencies {
-    implementation("io.ktor:ktor-client-core:2.0.0-eap-256")
-    implementation("io.ktor:ktor-client-cio:2.0.0-eap-256")
-    implementation("io.ktor:ktor-client-logging:2.0.0-eap-256")
-    implementation("ch.qos.logback:logback-classic:1.2.10")
-    implementation("it.skrape:skrapeit:1.2.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.0")
+    implementation("io.ktor:ktor-client-core:2.0.0")
+    implementation("io.ktor:ktor-client-cio:2.0.0")
+    implementation("io.ktor:ktor-client-logging:2.0.0")
+    implementation("ch.qos.logback:logback-classic:1.2.11")
+    implementation("it.skrape:skrapeit:1.2.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.1-native-mt")
     testImplementation("org.junit.jupiter:junit-jupiter:5.8.2")
     testImplementation(kotlin("test"))
     implementation(kotlin("stdlib-jdk8"))
@@ -34,6 +34,10 @@ tasks.test {
 
 tasks.withType<KotlinCompile> {
     kotlinOptions.jvmTarget = "11"
+}
+
+tasks.getByName("publish") {
+    dependsOn("test")
 }
 
 application {
@@ -90,7 +94,6 @@ publishing {
             groupId = "com.neitex"
             artifactId = "schools_parser"
             version = libraryVersion
-
             from(components["java"])
         }
     }

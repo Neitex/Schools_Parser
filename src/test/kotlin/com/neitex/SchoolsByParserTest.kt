@@ -234,15 +234,15 @@ internal class SchoolsByParserTest {
         }
 
         @Test
-        @DisplayName("Get class timetable using valid class ID and valid credentials")
+        @DisplayName("Get class timetable using valid class ID and valid credentials without walking to journal")
         fun testGettingTimetableValidClassIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.CLASS.getTimetable(classID = 8, validTeacherCredentials, guessShift = true)
+            val result =
+                SchoolsByParser.CLASS.getTimetable(classID = 8, validTeacherCredentials, walkToJournals = false)
             assert(result.isSuccess)
-            val timetable = result.getOrThrow().second
+            val timetable = result.getOrThrow()
             assertAll(
                 {
-                    assertNotNull(result.getOrThrow().first)
-                    assertFalse(result.getOrThrow().first!!)
+                    assertNotNull(result.getOrThrow())
                 },
                 {
                     assertContentEquals(
@@ -300,6 +300,85 @@ internal class SchoolsByParserTest {
         }
 
         @Test
+        @DisplayName("Get class timetable using valid class ID and valid credentials with walking to journal")
+        fun testGettingTimetableValidClassIDValidCredentialsWithWalking() = runBlocking {
+            val result = SchoolsByParser.CLASS.getTimetable(classID = 8, validTeacherCredentials, walkToJournals = true)
+            assert(result.isSuccess)
+            val timetable = result.getOrThrow()
+            assertAll(
+                {
+                    assertNotNull(result.getOrThrow())
+                },
+                {
+                    assertContentEquals(
+                        arrayOf(
+                            Lesson(1, testConstraintsList[1], "Белорусская литература", 8, arrayOf(108105), 377660),
+                            Lesson(2, testConstraintsList[2], "История Беларуси", 8, arrayOf(109035), 377654),
+                            Lesson(3, testConstraintsList[3], "Белорусский язык", 8, arrayOf(108105), 377659),
+                            Lesson(4, testConstraintsList[4], "Математика", 8, arrayOf(108728), 100131),
+                            Lesson(5, testConstraintsList[5], "Английский язык", 8, arrayOf(151701, 108508), 100121),
+                            Lesson(6, testConstraintsList[6], "Информатика", 8, arrayOf(108728, 109035), 100129),
+                        ), timetable.monday
+                    )
+                },
+                {
+                    assertContentEquals(
+                        arrayOf(
+                            Lesson(1, testConstraintsList[1], "Русская литература", 8, arrayOf(108728), 100135),
+                            Lesson(2, testConstraintsList[2], "Русский язык", 8, arrayOf(108728), 100136),
+                            Lesson(3, testConstraintsList[3], "Обществоведение", 8, arrayOf(108301), 377651),
+                            Lesson(4, testConstraintsList[4], "Физика", 8, arrayOf(104407), 100138),
+                            Lesson(
+                                5,
+                                testConstraintsList[5],
+                                "Физическая культура и здоровье",
+                                8,
+                                arrayOf(109035),
+                                100139
+                            )
+                        ), timetable.tuesday
+                    )
+                }, {
+                    assertContentEquals(
+                        arrayOf(
+                            Lesson(2, testConstraintsList[2], "Всемирная История", 8, arrayOf(109035), 100126),
+                            Lesson(3, testConstraintsList[3], "География", 8, arrayOf(104437), 100127),
+                            Lesson(4, testConstraintsList[4], "Биология", 8, arrayOf(104631), 100125),
+                            Lesson(5, testConstraintsList[5], "Английский язык", 8, arrayOf(151701, 108508), 100121)
+                        ), timetable.wednesday
+                    )
+                }, {
+                    assertContentEquals(
+                        arrayOf(
+                            Lesson(3, testConstraintsList[3], "Математика", 8, arrayOf(108728), 100131),
+                            Lesson(4, testConstraintsList[4], "Химия", 8, arrayOf(109035), 100140),
+                            Lesson(5, testConstraintsList[5], "Биология", 8, arrayOf(104631), 100125),
+                            Lesson(6, testConstraintsList[6], "Информатика", 8, arrayOf(108728, 109035), 100129),
+                            Lesson(
+                                7,
+                                testConstraintsList[7],
+                                "Физическая культура и здоровье",
+                                8,
+                                arrayOf(109035),
+                                100139
+                            )
+                        ), timetable.thursday
+                    )
+                }, {
+                    assertContentEquals(
+                        arrayOf(
+                            Lesson(2, testConstraintsList[2], "Математика", 8, arrayOf(108728), 100131),
+                            Lesson(3, testConstraintsList[3], "Химия", 8, arrayOf(109035), 100140),
+                            Lesson(4, testConstraintsList[4], "Английский язык", 8, arrayOf(151701, 108508), 100121)
+                        ), timetable.friday
+                    )
+                }, {
+                    assertContentEquals(arrayOf(), timetable.saturday)
+                }
+            )
+        }
+
+        @Test
         @DisplayName("Get class timetable using valid class ID and invalid credentials")
         fun testTimetableValidClassIDInvalidCredentials() = runBlocking {
             val result = SchoolsByParser.CLASS.getTimetable(classID = 8, invalidCredentials)
@@ -313,6 +392,14 @@ internal class SchoolsByParserTest {
             val result = SchoolsByParser.CLASS.getTimetable(classID = (-1), validParentCredentials)
             assert(result.isFailure)
             assert(result.exceptionOrNull() is PageNotFound)
+        }
+
+        @Test
+        @DisplayName("Get class shift")
+        fun testShiftGetting() = runBlocking {
+            val result = SchoolsByParser.CLASS.getClassShift(classID = 8, validTeacherCredentials)
+            assert(result.isSuccess)
+            assert(!result.getOrThrow())
         }
     }
 
@@ -398,16 +485,16 @@ internal class SchoolsByParserTest {
                 }, {
                     assertContentEquals(
                         arrayOf(
-                            Lesson(1, testConstraintsList[1], "Белорусская литература", 8, 108105, 377660),
-                            Lesson(3, testConstraintsList[3], "Английский язык", 6, 108105, 74),
-                            Lesson(3, testConstraintsList[3], "Белорусский язык", 8, 108105, 377659),
+                            Lesson(1, testConstraintsList[1], "Белорусская литература", 8, arrayOf(108105), 377660),
+                            Lesson(3, testConstraintsList[3], "Английский язык", 6, arrayOf(108105), 74),
+                            Lesson(3, testConstraintsList[3], "Белорусский язык", 8, arrayOf(108105), 377659),
                         ), unpackedResult.monday.first
                     )
                     assert(unpackedResult.monday.second.isEmpty())
                 }, {
                     assertContentEquals(
                         arrayOf(
-                            Lesson(4, testConstraintsList[4], "Английский язык", 6, 108105, 74)
+                            Lesson(4, testConstraintsList[4], "Английский язык", 6, arrayOf(108105), 74)
                         ), unpackedResult.tuesday.first
                     )
                     assert(unpackedResult.tuesday.second.isEmpty())
@@ -438,12 +525,12 @@ internal class SchoolsByParserTest {
                     val timetable = result.getOrThrow()
                     assertContentEquals(
                         arrayOf(
-                            Lesson(4, testConstraintsList[4], "Биология", 8, 104631, null)
+                            Lesson(4, testConstraintsList[4], "Биология", 8, arrayOf(104631), null)
                         ), timetable.wednesday.first
                     )
                     assertContentEquals(
                         arrayOf(
-                            Lesson(5, testConstraintsList[5], "Биология", 8, 104631, null)
+                            Lesson(5, testConstraintsList[5], "Биология", 8, arrayOf(104631), null)
                         ), timetable.thursday.first
                     )
                     assert(
