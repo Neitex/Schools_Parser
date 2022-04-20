@@ -93,7 +93,6 @@ class SchoolsByParser {
             } catch (e: UnknownError) {
                 Result.failure(e)
             }
-
         }
     }
 
@@ -476,6 +475,38 @@ class SchoolsByParser {
                         }
                     }
                 }
+            }
+
+        /**
+         * Returns an array of Pair(PupilID, OrderInClass)
+         */
+        suspend fun getPupilsOrdering(classID: Int, credentials: Credentials): Result<Array<Pair<Int, Short>>> =
+            wrapReturn("${schoolSubdomain}/class/$classID/pupils/ordering", credentials) {
+                val pairings = mutableListOf<Pair<Int, Short>>()
+                htmlDocument(it.bodyAsText()) {
+                    val pupilsCount = input {
+                        withId = "id_form-TOTAL_FORMS"
+                        findFirst {
+                            attribute("value").toInt()
+                        }
+                    }
+                    for (i in 0 until pupilsCount) {
+                        pairings.add(Pair(
+                            input {
+                                withId = "id_form-$i-id"
+                                findFirst {
+                                    attribute("value").toInt()
+                                }
+                            }, input {
+                                withId = "id_form-$i-order"
+                                findFirst {
+                                    attribute("value").toShort()
+                                }
+                            }
+                        ))
+                    }
+                }
+                Result.success(pairings.toTypedArray())
             }
     }
 

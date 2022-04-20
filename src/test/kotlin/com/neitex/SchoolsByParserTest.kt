@@ -401,6 +401,28 @@ internal class SchoolsByParserTest {
             assert(result.isSuccess)
             assert(!result.getOrThrow())
         }
+
+        @Test
+        @DisplayName("Get pupils ordering")
+        fun testPupilsOrdering() = runBlocking {
+            val tests = SchoolsByParser.CLASS.getPupilsOrdering(classID = 6, validTeacherCredentials)
+            assert(tests.isSuccess)
+            assertContentEquals(
+                arrayOf(
+                    Pair(67, 0.toShort()),
+                    Pair(495803, 0.toShort()),
+                    Pair(70, 0.toShort()),
+                    Pair(100132, 0.toShort()),
+                    Pair(61, 0.toShort()),
+                    Pair(69, 0.toShort()),
+                    Pair(65, 0.toShort()),
+                    Pair(66, 0.toShort()),
+                    Pair(62, 0.toShort()),
+                    Pair(100148, 10.toShort()),
+                    Pair(63, 11.toShort())
+                ), tests.getOrThrow()
+            )
+        }
     }
 
     @Nested
