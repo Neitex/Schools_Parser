@@ -190,19 +190,19 @@ internal class SchoolsByParserTest {
         @Test
         @DisplayName("Get list of pupils using valid class ID and valid credentials")
         fun testGettingPupilsListValidClassIDValidCredentials() = runBlocking {
-            val result = SchoolsByParser.CLASS.getPupilsList(classID = 8, validParentCredentials)
+            val result = SchoolsByParser.CLASS.getPupilsList(classID = 8, validTeacherCredentials)
             assertAll(
                 { assert(result.isSuccess) }, {
                     assertContentEquals(
                         listOf(
-                            Pupil(100135, Name("Дмитрий", null, "Ильин"), 8),
-                            Pupil(100119, Name("Елена", null, "Макеева"), 8),
-                            Pupil(100139, Name("Борис", null, "Пономарёв"), 8),
-                            Pupil(100142, Name("Мария", null, "Самсонова"), 8),
-                            Pupil(100140, Name("Алеся", null, "Соловьева"), 8),
-                            Pupil(100143, Name("Денис", null, "Шилин"), 8),
-                            Pupil(100121, Name("Валерий", null, "Юрченко"), 8),
-                            Pupil(100131, Name("Сергей", null, "Якушев"), 8)
+                            Pupil(100135, Name("Дмитрий", "Анатольевич", "Ильин"), 8),
+                            Pupil(100119, Name("Елена", "Евгеньевна", "Макеева"), 8),
+                            Pupil(100139, Name("Борис", "Глебович.", "Пономарёв"), 8),
+                            Pupil(100142, Name("Мария", "Викторовна", "Самсонова"), 8),
+                            Pupil(100140, Name("Алеся", "Андреевна", "Соловьева"), 8),
+                            Pupil(100143, Name("Денис", "Семёнович", "Шилин"), 8),
+                            Pupil(100121, Name("Валерий", "Владимирович", "Юрченко"), 8),
+                            Pupil(100131, Name("Сергей", "Александрович", "Якушев"), 8)
                         ), result.getOrThrow()
                     )
                 }

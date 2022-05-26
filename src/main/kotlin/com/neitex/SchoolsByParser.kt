@@ -8,6 +8,7 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import it.skrape.core.htmlDocument
+import it.skrape.selects.CssSelector
 import it.skrape.selects.DocElement
 import it.skrape.selects.ElementNotFoundException
 import it.skrape.selects.eachText
@@ -48,6 +49,8 @@ class SchoolsByParser {
          * Closes Ktor Http Client. After that all resources, used by library will be freed and library will become unusable
          * (unless you set a new HTTP Client manually)
          */
+        @Suppress("UNUSED") // It is not used in tests, so it appears to be unused,
+        // but it is required for a library to be capable of freeing its resources
         fun closeHttpClient() {
             client.close()
         }
@@ -64,14 +67,22 @@ class SchoolsByParser {
         /**
          * Sets custom Http client for library to use
          */
+        @Suppress("UNUSED") // It is not used in tests, so it appears to be unused,
+        // but it is required for a library to be capable of changing HTTP Client (i.e. for custom tests)
         fun setHttpClient(client: HttpClient) {
             this.client = client
         }
 
+        internal fun noNulls(vararg values: Any?): Boolean = values.none { it == null }
+
+        internal fun <T> CssSelector.nullableFind(init: CssSelector.() -> T): T? = try {
+            this.init()
+        } catch (e: ElementNotFoundException) {
+            null
+        }
+
         internal suspend fun <T> wrapReturn(
-            requestUrl: String,
-            credentials: Credentials,
-            returnValue: suspend (HttpResponse) -> Result<T>
+            requestUrl: String, credentials: Credentials, returnValue: suspend (HttpResponse) -> Result<T>
         ): Result<T> {
             return try {
                 val response = client.get {
@@ -79,10 +90,10 @@ class SchoolsByParser {
                     cookie("csrftoken", credentials.csrfToken)
                     cookie("sessionid", credentials.sessionID)
                 }
-                if (!response.checkCredentialsClear() || response.request.url.toString().contains("already-redirected"))
-                    return Result.failure(BadSchoolsByCredentials())
-                if (response.status == HttpStatusCode.NotFound)
-                    return Result.failure(PageNotFound("Page \'$requestUrl\' was not found"))
+                if (!response.checkCredentialsClear() || response.request.url.toString()
+                        .contains("already-redirected")
+                ) return Result.failure(BadSchoolsByCredentials())
+                if (response.status == HttpStatusCode.NotFound) return Result.failure(PageNotFound("Page \'$requestUrl\' was not found"))
                 returnValue(response)
             } catch (e: HttpRequestTimeoutException) {
                 Result.failure(SchoolsByUnavailable("Schools.by did not respond", e))
@@ -110,16 +121,15 @@ class SchoolsByParser {
                     response.setCookie().find { it.name == "csrftoken" }
                 } ?: return Result.failure(UnknownError("First stage of login failed: csrftoken cookie was not found"))
                 val (secondCSRFtoken, sessionid) = run {
-                    val response = client.submitForm(
-                        url = "https://schools.by/login",
-                        formParameters = Parameters.build {
+                    val response =
+                        client.submitForm(url = "https://schools.by/login", formParameters = Parameters.build {
                             append("csrfmiddlewaretoken", firstCSRFtoken.value)
                             append("username", username)
                             append("password", password)
                         }) {
-                        cookie("csrftoken", firstCSRFtoken.value)
-                        header(HttpHeaders.Referrer, "https://schools.by/login")
-                    }
+                            cookie("csrftoken", firstCSRFtoken.value)
+                            header(HttpHeaders.Referrer, "https://schools.by/login")
+                        }
                     if ((response.headers["location"]
                             ?: "https://schools.by/login").contains("login")
                     ) return Result.failure(AuthorizationUnsuccessful())
@@ -178,8 +188,7 @@ class SchoolsByParser {
                     cookie("sessionid", credentials.sessionID)
                 }
             }
-            if (!response.checkCredentialsClear())
-                return Result.failure(BadSchoolsByCredentials())
+            if (!response.checkCredentialsClear()) return Result.failure(BadSchoolsByCredentials())
             when (response.status) {
                 HttpStatusCode.NotFound -> return Result.failure(UnknownError("Login page was not found, request page: \'${response.request.url}\'"))
                 HttpStatusCode.OK -> return Result.failure(UnknownError("Schools.by returned unusual HTTP Code OK"))
@@ -209,8 +218,7 @@ class SchoolsByParser {
                         ?: return@htmlDocument Result.failure(UnknownError("Name detection failed: bad input: \'$nameText\'"))
                     val type = SchoolsByUserType.valueOf(
                         response.request.url.encodedPath.replace("director", "administration").replaceAfterLast('/', "")
-                            .removeSuffix("/")
-                            .replaceBefore('/', "").removePrefix("/").uppercase()
+                            .removeSuffix("/").replaceBefore('/', "").removePrefix("/").uppercase()
                     )
                     Result.success(User(userID, type, name))
                 }
@@ -261,31 +269,48 @@ class SchoolsByParser {
          * Returns list of pupils in class with [classID]
          */
         suspend fun getPupilsList(classID: Int, credentials: Credentials): Result<List<Pupil>> {
-            return wrapReturn("${schoolSubdomain}class/$classID/pupils", credentials) { response ->
-                val pupilsList = mutableListOf<Pupil>()
+            return wrapReturn("${schoolSubdomain}class/$classID/pupils/editall", credentials) { response ->
                 htmlDocument(response.bodyAsText()) {
                     div {
-                        withClass = "pupil"
+                        withClass = "edit_user_fio"
                         findAll {
-                            a {
-                                withClass = "user_type_1"
-                                findAll {
-                                    forEach {
-                                        pupilsList.add(
-                                            Pupil(
-                                                it.attribute("href").removePrefix("/pupil/").toInt(),
-                                                Name.fromString(it.ownText)
-                                                    ?: throw UnknownError("Name detection failed: invalid value \'${it.ownText}\'"),
-                                                classID
-                                            )
-                                        )
+                            val pupils = this.mapIndexedNotNull { index, docElement ->
+                                val id = docElement.input {
+                                    withId = "id_stable-$index-id"
+                                    nullableFind {
+                                        findFirst { attribute("value").toIntOrNull() }
+                                    }
+                                } ?: return@mapIndexedNotNull null
+                                val lastName = docElement.div {
+                                    withClass = "input-text"
+                                    nullableFind {
+                                        findFirst { ownText }
                                     }
                                 }
+                                val firstName = docElement.div {
+                                    withClass = "input-text"
+                                    nullableFind {
+                                        findSecond {
+                                            ownText
+                                        }
+                                    }
+                                }
+                                val middleName = docElement.input {
+                                    withId = "id_stable-$index-father_name"
+                                    nullableFind {
+                                        findFirst {
+                                            attribute("value").ifBlank { null }
+                                        }
+                                    }
+                                }
+                                if (noNulls(id, firstName, lastName)) {
+                                    Pupil(id, Name(firstName!!, middleName, lastName!!), classID)
+                                } else null
                             }
+                            Result.success(pupils)
                         }
                     }
                 }
-                Result.success(pupilsList)
             }
         }
 
@@ -296,9 +321,7 @@ class SchoolsByParser {
          * @see getClassShift returns true shift
          */
         suspend fun getTimetable(
-            classID: Int,
-            credentials: Credentials,
-            walkToJournals: Boolean = false
+            classID: Int, credentials: Credentials, walkToJournals: Boolean = false
         ): Result<Timetable> {
             return wrapReturn("${schoolSubdomain}class/$classID/timetable", credentials) {
                 val timetableMap = mutableMapOf<DayOfWeek, Array<Lesson>>()
@@ -309,10 +332,9 @@ class SchoolsByParser {
                             withClass = "ttb_box"
                             findAll {
                                 forEachIndexed { _, mainDiv ->
-                                    val day =
-                                        russianDayNameToDayOfWeek(mainDiv.div {
-                                            withClass = "ttb_day"; findFirst { ownText }
-                                        })
+                                    val day = russianDayNameToDayOfWeek(mainDiv.div {
+                                        withClass = "ttb_day"; findFirst { ownText }
+                                    })
                                     var dayTimetable = arrayOf<Lesson>()
                                     mainDiv.tbody {
                                         tr {
@@ -322,8 +344,9 @@ class SchoolsByParser {
                                                     val num =
                                                         doc.td { withClass = "num"; findFirst { ownText } }.dropLast(1)
                                                             .toInt()
-                                                    val time = TimeConstraints.fromString(
-                                                        doc.td { withClass = "time"; findFirst { ownText } })
+                                                    val time = TimeConstraints.fromString(doc.td {
+                                                        withClass = "time"; findFirst { ownText }
+                                                    })
                                                         ?: throw UnknownError("Failed detecting lesson time; Current element: \'$doc\'")
                                                     val name = doc.td {
                                                         val titles = mutableListOf<String>()
@@ -332,10 +355,10 @@ class SchoolsByParser {
                                                             a {
                                                                 findAll {
                                                                     forEach { doc ->
-                                                                        if (!titles.contains(doc.attribute("title"))
-                                                                            && doc.attribute("title").isNotEmpty()
-                                                                        )
-                                                                            titles.add(doc.attribute("title"))
+                                                                        if (!titles.contains(doc.attribute("title")) && doc.attribute(
+                                                                                "title"
+                                                                            ).isNotEmpty()
+                                                                        ) titles.add(doc.attribute("title"))
                                                                     }
                                                                 }
                                                             }
@@ -344,10 +367,10 @@ class SchoolsByParser {
                                                                 span {
                                                                     findAll {
                                                                         forEach { doc ->
-                                                                            if (!titles.contains(doc.attribute("title"))
-                                                                                && doc.attribute("title").isNotEmpty()
-                                                                            )
-                                                                                titles.add(doc.attribute("title"))
+                                                                            if (!titles.contains(doc.attribute("title")) && doc.attribute(
+                                                                                    "title"
+                                                                                ).isNotEmpty()
+                                                                            ) titles.add(doc.attribute("title"))
                                                                         }
                                                                     }
                                                                 }
@@ -370,15 +393,9 @@ class SchoolsByParser {
                                                     } catch (e: ElementNotFoundException) {
                                                         null
                                                     }
-                                                    if (add)
-                                                        dayTimetable += Lesson(
-                                                            num.toShort(),
-                                                            time,
-                                                            name,
-                                                            classID,
-                                                            null,
-                                                            journalID
-                                                        )
+                                                    if (add) dayTimetable += Lesson(
+                                                        num.toShort(), time, name, classID, null, journalID
+                                                    )
                                                 }
                                             }
                                         }
@@ -395,57 +412,53 @@ class SchoolsByParser {
                     for (entry in timetableMap) {
                         for ((index, lesson) in entry.value.withIndex()) {
                             if (lesson.journalID != null) {
-                                val teachers = if (!cacheMap.contains(lesson.journalID))
-                                    wrapReturn("${schoolSubdomain}/journal/${lesson.journalID}", credentials) {
-                                        val htmlTeachers = mutableListOf<Int>()
-                                        htmlDocument(it.bodyAsText()) {
+                                val teachers = if (!cacheMap.contains(lesson.journalID)) wrapReturn(
+                                    "${schoolSubdomain}/journal/${lesson.journalID}", credentials
+                                ) {
+                                    val htmlTeachers = mutableListOf<Int>()
+                                    htmlDocument(it.bodyAsText()) {
+                                        div {
+                                            withClass = "journal_teachers"
                                             div {
-                                                withClass = "journal_teachers"
-                                                div {
-                                                    withClass = "cnt"
-                                                    li {
-                                                        findAll {
-                                                            for (element in this) {
-                                                                (try {
-                                                                    element.a {
-                                                                        findFirst {
-                                                                            attribute("href").removePrefix("/teacher/")
-                                                                                .removePrefix("/administration/")
-                                                                                .removePrefix("/director/")
-                                                                                .toIntOrNull()
-                                                                        }
+                                                withClass = "cnt"
+                                                li {
+                                                    findAll {
+                                                        for (element in this) {
+                                                            (try {
+                                                                element.a {
+                                                                    findFirst {
+                                                                        attribute("href").removePrefix("/teacher/")
+                                                                            .removePrefix("/administration/")
+                                                                            .removePrefix("/director/").toIntOrNull()
                                                                     }
-                                                                } catch (e: ElementNotFoundException) {
-                                                                    null
-                                                                })?.also {
-                                                                    if (!try {
-                                                                            element.small {
-                                                                                findAll {
-                                                                                    eachText.any { it.contains("классн") }
-                                                                                }
-                                                                            }
-                                                                        } catch (e: ElementNotFoundException) {
-                                                                            false
-                                                                        }
-                                                                    )
-                                                                        htmlTeachers.add(it)
                                                                 }
+                                                            } catch (e: ElementNotFoundException) {
+                                                                null
+                                                            })?.also {
+                                                                if (!try {
+                                                                        element.small {
+                                                                            findAll {
+                                                                                eachText.any { it.contains("классн") }
+                                                                            }
+                                                                        }
+                                                                    } catch (e: ElementNotFoundException) {
+                                                                        false
+                                                                    }
+                                                                ) htmlTeachers.add(it)
                                                             }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
-                                        Result.success(htmlTeachers)
-                                    }.getOrElse {
-                                        Logger.getAnonymousLogger().log(
-                                            Level.WARNING,
-                                            "Failed to walk to journal with ID ${lesson.journalID}",
-                                            it
-                                        )
-                                        arrayListOf()
-                                    }.toSet().toTypedArray()
-                                        .also { cacheMap[lesson.journalID] = it }
+                                    }
+                                    Result.success(htmlTeachers)
+                                }.getOrElse {
+                                    Logger.getAnonymousLogger().log(
+                                        Level.WARNING, "Failed to walk to journal with ID ${lesson.journalID}", it
+                                    )
+                                    arrayListOf()
+                                }.toSet().toTypedArray().also { cacheMap[lesson.journalID] = it }
                                 else cacheMap[lesson.journalID]!!
                                 entry.setValue(entry.value.toMutableList().apply {
                                     removeAt(index)
@@ -491,19 +504,17 @@ class SchoolsByParser {
                         }
                     }
                     for (i in 0 until pupilsCount) {
-                        pairings.add(Pair(
-                            input {
-                                withId = "id_form-$i-id"
-                                findFirst {
-                                    attribute("value").toInt()
-                                }
-                            }, input {
-                                withId = "id_form-$i-order"
-                                findFirst {
-                                    attribute("value").toShort()
-                                }
+                        pairings.add(Pair(input {
+                            withId = "id_form-$i-id"
+                            findFirst {
+                                attribute("value").toInt()
                             }
-                        ))
+                        }, input {
+                            withId = "id_form-$i-order"
+                            findFirst {
+                                attribute("value").toShort()
+                            }
+                        }))
                     }
                 }
                 Result.success(pairings.toTypedArray())
@@ -577,19 +588,13 @@ class SchoolsByParser {
                             withClass = "num"; findFirst {
                             ownText.removeSuffix(".").toIntOrNull()
                         }
-                        }
-                            ?: throw UnknownError("Lesson place detection failure: String to Int conversion failed")
+                        } ?: throw UnknownError("Lesson place detection failure: String to Int conversion failed")
                         val bells = row.td {
-                            withClass = "bells"; TimeConstraints.fromString(
-                            findFirst { ownText }
-                        )
-                        }
-                            ?: continue
+                            withClass = "bells"; TimeConstraints.fromString(findFirst { ownText })
+                        } ?: continue
                         for ((index, column) in row.td { findAll { this.withIndex() } }) {
-                            if (column.className != "" && column.className != "crossed-lesson")
-                                continue
-                            if (column.ownText == "—")
-                                continue
+                            if (column.className != "" && column.className != "crossed-lesson") continue
+                            if (column.ownText == "—") continue
                             column.div {
                                 withClass = "lesson"
                                 findAll {
@@ -598,24 +603,20 @@ class SchoolsByParser {
                                             it.a {
                                                 withClass = "subject"; findFirst {
                                                 Pair(
-                                                    ownText,
-                                                    attribute("href").removePrefix("/journal/").toIntOrNull()
+                                                    ownText, attribute("href").removePrefix("/journal/").toIntOrNull()
                                                 )
                                             }
                                             }
                                         } catch (e: ElementNotFoundException) {
                                             it.b { findFirst { Pair(ownText, null) } }
                                         }
-                                        val classID =
-                                            it.span {
-                                                withClass = "class"
-                                                a { findFirst { this.attribute("href") } }.removePrefix("/class/")
-                                                    .toInt()
-                                            }
+                                        val classID = it.span {
+                                            withClass = "class"
+                                            a { findFirst { this.attribute("href") } }.removePrefix("/class/").toInt()
+                                        }
                                         if (!isSecondShift) {
                                             firstShiftTimetable[DayOfWeek.values()[index - 2]] =
-                                                (firstShiftTimetable[DayOfWeek.values()[index - 2]]
-                                                    ?: arrayOf()).let {
+                                                (firstShiftTimetable[DayOfWeek.values()[index - 2]] ?: arrayOf()).let {
                                                     it + Lesson(
                                                         place.toShort(),
                                                         bells,
@@ -627,8 +628,7 @@ class SchoolsByParser {
                                                 }
                                         } else {
                                             secondShiftTimetable[DayOfWeek.values()[index - 2]] =
-                                                (secondShiftTimetable[DayOfWeek.values()[index - 2]]
-                                                    ?: arrayOf()).let {
+                                                (secondShiftTimetable[DayOfWeek.values()[index - 2]] ?: arrayOf()).let {
                                                     it + Lesson(
                                                         place.toShort(),
                                                         bells,
@@ -658,8 +658,7 @@ class SchoolsByParser {
                                     findFirst {
                                         for ((index, child) in children.withIndex()) {
                                             if (child.className == "cc_timeTable") {
-                                                if (index == 1)
-                                                    firstShift = true
+                                                if (index == 1) firstShift = true
                                                 else secondShift = true
                                             }
                                         }
@@ -711,14 +710,13 @@ class SchoolsByParser {
                         }
                     }
                 }
-                Result.success(TwoShiftsTimetable(
-                    DayOfWeek.values().filter { it != DayOfWeek.SUNDAY }
-                        .associateWith {
-                            Pair(
-                                firstShiftTimetable[it]!!.toList().toTypedArray(),
-                                secondShiftTimetable[it]!!.toList().toTypedArray()
-                            )
-                        })
+                Result.success(
+                    TwoShiftsTimetable(DayOfWeek.values().filter { it != DayOfWeek.SUNDAY }.associateWith {
+                        Pair(
+                            firstShiftTimetable[it]!!.toList().toTypedArray(),
+                            secondShiftTimetable[it]!!.toList().toTypedArray()
+                        )
+                    })
                 )
             }
         }
@@ -753,11 +751,9 @@ class SchoolsByParser {
                         }
                     }
                 }
-                if (classID == -1)
-                    return@wrapReturn Result.failure(UnknownError("Class ID was not found"))
+                if (classID == -1) return@wrapReturn Result.failure(UnknownError("Class ID was not found"))
                 val schoolClass = CLASS.getClassData(classID, credentials)
-                if (schoolClass.isSuccess)
-                    return@wrapReturn Result.success(schoolClass.getOrThrow())
+                if (schoolClass.isSuccess) return@wrapReturn Result.success(schoolClass.getOrThrow())
                 else return@wrapReturn Result.failure(schoolClass.exceptionOrNull()!!)
             }
         }
@@ -793,9 +789,9 @@ class SchoolsByParser {
                                             }
                                             val classID = row.a {
                                                 findSecond {
-                                                    if (className.isEmpty())
-                                                        attribute("href").replaceBeforeLast("/", "").removePrefix("/")
-                                                            .toIntOrNull()
+                                                    if (className.isEmpty()) attribute("href").replaceBeforeLast(
+                                                        "/", ""
+                                                    ).removePrefix("/").toIntOrNull()
                                                     else null
                                                 }
                                             }
