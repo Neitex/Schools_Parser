@@ -7,6 +7,8 @@ import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariables
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
+import java.time.LocalDate
+import java.time.Month
 import kotlin.test.*
 
 @DisplayName("Schools.by parser tests")
@@ -421,6 +423,39 @@ internal class SchoolsByParserTest {
                     Pair(100148, 10.toShort()),
                     Pair(63, 11.toShort())
                 ), tests.getOrThrow()
+            )
+        }
+
+        @Test
+        @DisplayName("Get pupils movements between classes")
+        fun testMoveDates() = runBlocking {
+            val result = SchoolsByParser.CLASS.getTransfers(classID = 6, validTeacherCredentials)
+            assert(result.isSuccess)
+            assert(result.getOrThrow().isEmpty())
+        }
+
+        @Test
+        @EnabledIfEnvironmentVariable(
+            named = "customSchoolsTest",
+            matches = "true",
+            disabledReason = "This test is only enabled if custom test data is provided"
+        )
+        fun testMoveDatesCustom() = runBlocking {
+            run { // Customize library for this test
+                SchoolsByParser.setSubdomain(System.getenv("customSchoolDomain"))
+            }
+            val result = SchoolsByParser.CLASS.getTransfers(
+                System.getenv("customClassID").toInt(), Credentials(
+                    System.getenv("customCsrfToken"), System.getenv("customSessionID")
+                )
+            )
+            println(result)
+            assert(result.isSuccess)
+            assertContentEquals(
+                listOf(
+                    Pair(Pair(null, 26218), LocalDate.of(2019, Month.AUGUST, 1)),
+                    Pair(Pair(26218, 26215), LocalDate.of(2021, Month.SEPTEMBER, 1))
+                ), result.getOrThrow()[1896875]!!
             )
         }
     }

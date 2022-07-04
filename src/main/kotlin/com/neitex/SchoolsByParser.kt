@@ -14,7 +14,11 @@ import it.skrape.selects.ElementNotFoundException
 import it.skrape.selects.eachText
 import it.skrape.selects.html5.*
 import java.net.http.HttpConnectTimeoutException
+import java.text.SimpleDateFormat
 import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.ZoneId
+import java.util.*
 import java.util.logging.Level
 import java.util.logging.Logger
 import kotlin.collections.set
@@ -102,6 +106,8 @@ class SchoolsByParser {
             } catch (e: ElementNotFoundException) {
                 Result.failure(UnknownError("Page parsing failed: Exception: \'${e.message}\'; Stack trace: ${e.stackTraceToString()}"))
             } catch (e: UnknownError) {
+                Result.failure(e)
+            } catch (e: Exception) {
                 Result.failure(e)
             }
         }
@@ -518,6 +524,96 @@ class SchoolsByParser {
                     }
                 }
                 Result.success(pairings.toTypedArray())
+            }
+
+        /**
+         * Returns all transfers of pupils in given class. May contain records of pupils transferring from given class to other classes.
+         */
+        suspend fun getTransfers(
+            classID: Int, credentials: Credentials
+        ): Result<Map<Int, List<Pair<Pair<Int?, Int>, LocalDate>>>> =
+            wrapReturn("${schoolSubdomain}/class/$classID/pupils/transfer", credentials) { response ->
+                val dateRegex = Regex("""(\d{1,2})\s+([а-яА-Я]+)\s+(\d{4})""")
+                // Date format to parse russian date in format "dd MMMM yyyy"
+                val dateFormat = SimpleDateFormat("dd MMMM yyyy", Locale.forLanguageTag("ru"))
+                val dates = mutableMapOf<Int, List<Pair<Pair<Int?, Int>, LocalDate>>>()
+                htmlDocument(response.bodyAsText()) {
+                    tr {
+                        withClass = "row-pupil"
+                        findAll {
+                            this.forEach { row ->
+                                val pupilID = row.a {
+                                    withClass = "user_type_1"; nullableFind {
+                                    findFirst {
+                                        attribute("href").removePrefix("/pupil/").toIntOrNull()
+                                    }
+                                }
+                                }
+                                val history = nullableFind {
+                                    val entries = mutableListOf<Pair<Pair<Int?, Int>, LocalDate>>()
+                                    row.ul {
+                                        withClass = "history"
+                                        li {
+                                            findAll {
+                                                forEach {
+                                                    entries.add(when (it.a {
+                                                        findAll {
+                                                            this.size
+                                                        }
+                                                    }) {
+                                                        1, 2 -> {
+                                                            Pair(
+                                                                Pair(null, it.a {
+                                                                    findFirst {
+                                                                        attribute("href").removePrefix("/class/")
+                                                                            .toInt()
+                                                                    }
+                                                                }), LocalDate.ofInstant(
+                                                                    dateFormat.parse(dateRegex.find(it.ownText)!!.value)
+                                                                        .toInstant(), ZoneId.of("Europe/Minsk")
+                                                                )
+                                                            )
+                                                        }
+                                                        3, 4 -> {
+                                                            Pair(
+                                                                Pair(it.a {
+                                                                    findFirst {
+                                                                        attribute("href").removePrefix("/class/")
+                                                                            .toInt()
+                                                                    }
+                                                                }, it.a {
+                                                                    findSecond {
+                                                                        attribute("href").removePrefix("/class/")
+                                                                            .toInt()
+                                                                    }
+                                                                }), LocalDate.ofInstant(
+                                                                    dateFormat.parse(dateRegex.find(it.ownText)!!.value)
+                                                                        .toInstant(), ZoneId.of("Europe/Minsk")
+                                                                )
+                                                            )
+                                                        }
+                                                        else -> throw IllegalStateException("Unexpected value: ${
+                                                            it.a {
+                                                                findAll {
+                                                                    this.size
+                                                                }
+                                                            }
+                                                        }")
+                                                    })
+                                                }
+                                            }
+                                        }
+                                    }
+                                    entries
+                                }
+                                if (pupilID != null && history != null) {
+                                    dates[pupilID] = history
+                                }
+                            }
+                        }
+                    }
+                }
+                Result.success(dates)
             }
     }
 

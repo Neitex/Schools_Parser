@@ -3,11 +3,10 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     kotlin("jvm") version "1.6.10"
     `maven-publish`
-    application
 }
 
 group = "com.neitex"
-version = "0.1.2"
+version = "0.1.3"
 val libraryVersion = version.toString()
 
 repositories {
@@ -35,13 +34,12 @@ tasks.test {
 tasks.withType<KotlinCompile> {
     kotlinOptions.jvmTarget = "11"
 }
+java {
+    withSourcesJar()
+}
 
 tasks.getByName("publish") {
     dependsOn("test")
-}
-
-application {
-    mainClass.set("MainKt")
 }
 
 publishing {
