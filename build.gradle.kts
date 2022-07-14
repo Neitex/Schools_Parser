@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.neitex"
-version = "0.1.3"
+version = "0.1.5"
 val libraryVersion = version.toString()
 
 repositories {
@@ -36,10 +36,6 @@ tasks.withType<KotlinCompile> {
 }
 java {
     withSourcesJar()
-}
-
-tasks.getByName("publish") {
-    dependsOn("test")
 }
 
 publishing {

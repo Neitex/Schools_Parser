@@ -1,6 +1,7 @@
 package com.neitex
 
 import java.time.DayOfWeek
+import java.time.LocalDate
 
 data class Credentials(val csrfToken: String, val sessionID: String)
 
@@ -60,7 +61,7 @@ data class TimeConstraints(val startHour: Short, val startMinute: Short, val end
     }
 }
 
-data class Lesson(
+data class TimetableLesson(
     val place: Short,
     val timeConstraints: TimeConstraints,
     val title: String,
@@ -72,7 +73,7 @@ data class Lesson(
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
 
-        other as Lesson
+        other as TimetableLesson
 
         if (place != other.place) return false
         if (timeConstraints != other.timeConstraints) return false
@@ -99,9 +100,9 @@ data class Lesson(
 }
 
 class Timetable {
-    private var lessons: Map<DayOfWeek, Array<Lesson>>
+    private var lessons: Map<DayOfWeek, Array<TimetableLesson>>
 
-    constructor(lessonsMap: Map<DayOfWeek, Array<Lesson>>) {
+    constructor(lessonsMap: Map<DayOfWeek, Array<TimetableLesson>>) {
         require(lessonsMap.keys.containsAll(kotlin.run {
             val set = mutableSetOf<DayOfWeek>()
             DayOfWeek.values().filter { it != DayOfWeek.SUNDAY }.toCollection(set)
@@ -110,16 +111,17 @@ class Timetable {
         lessons = lessonsMap
     }
 
+    @Suppress("UNUSED")
     constructor(
-        monday: Array<Lesson> = arrayOf(),
-        tuesday: Array<Lesson> = arrayOf(),
-        wednesday: Array<Lesson> = arrayOf(),
-        thursday: Array<Lesson> = arrayOf(),
-        friday: Array<Lesson> = arrayOf(),
-        saturday: Array<Lesson> = arrayOf()
+        monday: Array<TimetableLesson> = arrayOf(),
+        tuesday: Array<TimetableLesson> = arrayOf(),
+        wednesday: Array<TimetableLesson> = arrayOf(),
+        thursday: Array<TimetableLesson> = arrayOf(),
+        friday: Array<TimetableLesson> = arrayOf(),
+        saturday: Array<TimetableLesson> = arrayOf()
     ) {
         lessons = kotlin.run {
-            val map = mutableMapOf<DayOfWeek, Array<Lesson>>()
+            val map = mutableMapOf<DayOfWeek, Array<TimetableLesson>>()
             map[DayOfWeek.MONDAY] = monday
             map[DayOfWeek.TUESDAY] = tuesday
             map[DayOfWeek.WEDNESDAY] = wednesday
@@ -130,34 +132,34 @@ class Timetable {
         }
     }
 
-    operator fun get(day: DayOfWeek): Array<Lesson> {
+    operator fun get(day: DayOfWeek): Array<TimetableLesson> {
         require(day != DayOfWeek.SUNDAY)
         return lessons[day]!!
     }
 
-    operator fun set(day: DayOfWeek, value: Array<Lesson>) {
+    operator fun set(day: DayOfWeek, value: Array<TimetableLesson>) {
         require(day != DayOfWeek.SUNDAY)
         lessons = lessons.minus(day).plus(Pair(day, value))
     }
 
-    val monday: Array<Lesson>
+    val monday: Array<TimetableLesson>
         get() = lessons[DayOfWeek.MONDAY]!!
-    val tuesday: Array<Lesson>
+    val tuesday: Array<TimetableLesson>
         get() = lessons[DayOfWeek.TUESDAY]!!
-    val wednesday: Array<Lesson>
+    val wednesday: Array<TimetableLesson>
         get() = lessons[DayOfWeek.WEDNESDAY]!!
-    val thursday: Array<Lesson>
+    val thursday: Array<TimetableLesson>
         get() = lessons[DayOfWeek.THURSDAY]!!
-    val friday: Array<Lesson>
+    val friday: Array<TimetableLesson>
         get() = lessons[DayOfWeek.FRIDAY]!!
-    val saturday: Array<Lesson>
+    val saturday: Array<TimetableLesson>
         get() = lessons[DayOfWeek.SATURDAY]!!
 }
 
 class TwoShiftsTimetable {
-    private var lessons: Map<DayOfWeek, Pair<Array<Lesson>, Array<Lesson>>>
+    private var lessons: Map<DayOfWeek, Pair<Array<TimetableLesson>, Array<TimetableLesson>>>
 
-    constructor(lessonsMap: Map<DayOfWeek, Pair<Array<Lesson>, Array<Lesson>>>) {
+    constructor(lessonsMap: Map<DayOfWeek, Pair<Array<TimetableLesson>, Array<TimetableLesson>>>) {
         require(lessonsMap.keys.containsAll(kotlin.run {
             val set = mutableSetOf<DayOfWeek>()
             DayOfWeek.values().filter { it != DayOfWeek.SUNDAY }.toCollection(set)
@@ -166,16 +168,17 @@ class TwoShiftsTimetable {
         lessons = lessonsMap
     }
 
+    @Suppress("UNUSED")
     constructor(
-        monday: Pair<Array<Lesson>, Array<Lesson>> = Pair(arrayOf(), arrayOf()),
-        tuesday: Pair<Array<Lesson>, Array<Lesson>> = Pair(arrayOf(), arrayOf()),
-        wednesday: Pair<Array<Lesson>, Array<Lesson>> = Pair(arrayOf(), arrayOf()),
-        thursday: Pair<Array<Lesson>, Array<Lesson>> = Pair(arrayOf(), arrayOf()),
-        friday: Pair<Array<Lesson>, Array<Lesson>> = Pair(arrayOf(), arrayOf()),
-        saturday: Pair<Array<Lesson>, Array<Lesson>> = Pair(arrayOf(), arrayOf())
+        monday: Pair<Array<TimetableLesson>, Array<TimetableLesson>> = Pair(arrayOf(), arrayOf()),
+        tuesday: Pair<Array<TimetableLesson>, Array<TimetableLesson>> = Pair(arrayOf(), arrayOf()),
+        wednesday: Pair<Array<TimetableLesson>, Array<TimetableLesson>> = Pair(arrayOf(), arrayOf()),
+        thursday: Pair<Array<TimetableLesson>, Array<TimetableLesson>> = Pair(arrayOf(), arrayOf()),
+        friday: Pair<Array<TimetableLesson>, Array<TimetableLesson>> = Pair(arrayOf(), arrayOf()),
+        saturday: Pair<Array<TimetableLesson>, Array<TimetableLesson>> = Pair(arrayOf(), arrayOf())
     ) {
         lessons = kotlin.run {
-            val map = mutableMapOf<DayOfWeek, Pair<Array<Lesson>, Array<Lesson>>>()
+            val map = mutableMapOf<DayOfWeek, Pair<Array<TimetableLesson>, Array<TimetableLesson>>>()
             map[DayOfWeek.MONDAY] = monday
             map[DayOfWeek.TUESDAY] = tuesday
             map[DayOfWeek.WEDNESDAY] = wednesday
@@ -186,26 +189,42 @@ class TwoShiftsTimetable {
         }
     }
 
-    operator fun get(day: DayOfWeek): Pair<Array<Lesson>, Array<Lesson>> {
+    operator fun get(day: DayOfWeek): Pair<Array<TimetableLesson>, Array<TimetableLesson>> {
         require(day != DayOfWeek.SUNDAY)
         return lessons[day]!!
     }
 
-    operator fun set(day: DayOfWeek, value: Pair<Array<Lesson>, Array<Lesson>>) {
+    operator fun set(day: DayOfWeek, value: Pair<Array<TimetableLesson>, Array<TimetableLesson>>) {
         require(day != DayOfWeek.SUNDAY)
         lessons = lessons.minus(day).plus(Pair(day, value))
     }
 
-    val monday: Pair<Array<Lesson>, Array<Lesson>>
+    val monday: Pair<Array<TimetableLesson>, Array<TimetableLesson>>
         get() = lessons[DayOfWeek.MONDAY]!!
-    val tuesday: Pair<Array<Lesson>, Array<Lesson>>
+    val tuesday: Pair<Array<TimetableLesson>, Array<TimetableLesson>>
         get() = lessons[DayOfWeek.TUESDAY]!!
-    val wednesday: Pair<Array<Lesson>, Array<Lesson>>
+    val wednesday: Pair<Array<TimetableLesson>, Array<TimetableLesson>>
         get() = lessons[DayOfWeek.WEDNESDAY]!!
-    val thursday: Pair<Array<Lesson>, Array<Lesson>>
+    val thursday: Pair<Array<TimetableLesson>, Array<TimetableLesson>>
         get() = lessons[DayOfWeek.THURSDAY]!!
-    val friday: Pair<Array<Lesson>, Array<Lesson>>
+    val friday: Pair<Array<TimetableLesson>, Array<TimetableLesson>>
         get() = lessons[DayOfWeek.FRIDAY]!!
-    val saturday: Pair<Array<Lesson>, Array<Lesson>>
+    val saturday: Pair<Array<TimetableLesson>, Array<TimetableLesson>>
         get() = lessons[DayOfWeek.SATURDAY]!!
 }
+
+data class Lesson(
+    val lessonID: Long,
+    val journalID: Int?,
+    val teachers: Set<Int>,
+    val subgroups: Set<Int>?,
+    val title: String,
+    val date: LocalDate,
+    val place: Int
+)
+
+data class Subgroup(
+    val subgroupID: Int,
+    val title: String,
+    val pupils: List<Int>
+)

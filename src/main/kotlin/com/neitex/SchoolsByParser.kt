@@ -256,8 +256,10 @@ class SchoolsByParser {
                             withClass = "r_user_info"
                             p {
                                 withClass = "name"
-                                a {
-                                    withClass = "user_type_3"
+                                customTag(
+                                    "",
+                                    "a.user_type_1, a.user_type_2, a.user_type_3, a.user_type_4, a.user_type_5, a.user_type_6, a.user_type_7"
+                                ) {
                                     findFirst {
                                         attribute("href").removePrefix("${schoolSubdomain}teacher/").toIntOrNull()
                                     }
@@ -330,7 +332,7 @@ class SchoolsByParser {
             classID: Int, credentials: Credentials, walkToJournals: Boolean = false
         ): Result<Timetable> {
             return wrapReturn("${schoolSubdomain}class/$classID/timetable", credentials) {
-                val timetableMap = mutableMapOf<DayOfWeek, Array<Lesson>>()
+                val timetableMap = mutableMapOf<DayOfWeek, Array<TimetableLesson>>()
                 htmlDocument(it.bodyAsText()) {
                     div {
                         withClass = "ttb_boxes"
@@ -341,7 +343,7 @@ class SchoolsByParser {
                                     val day = russianDayNameToDayOfWeek(mainDiv.div {
                                         withClass = "ttb_day"; findFirst { ownText }
                                     })
-                                    var dayTimetable = arrayOf<Lesson>()
+                                    var dayTimetable = arrayOf<TimetableLesson>()
                                     mainDiv.tbody {
                                         tr {
                                             findAll {
@@ -399,7 +401,7 @@ class SchoolsByParser {
                                                     } catch (e: ElementNotFoundException) {
                                                         null
                                                     }
-                                                    if (add) dayTimetable += Lesson(
+                                                    if (add) dayTimetable += TimetableLesson(
                                                         num.toShort(), time, name, classID, null, journalID
                                                     )
                                                 }
@@ -534,7 +536,6 @@ class SchoolsByParser {
         ): Result<Map<Int, List<Pair<Pair<Int?, Int>, LocalDate>>>> =
             wrapReturn("${schoolSubdomain}/class/$classID/pupils/transfer", credentials) { response ->
                 val dateRegex = Regex("""(\d{1,2})\s+([а-яА-Я]+)\s+(\d{4})""")
-                // Date format to parse russian date in format "dd MMMM yyyy"
                 val dateFormat = SimpleDateFormat("dd MMMM yyyy", Locale.forLanguageTag("ru"))
                 val dates = mutableMapOf<Int, List<Pair<Pair<Int?, Int>, LocalDate>>>()
                 htmlDocument(response.bodyAsText()) {
@@ -542,12 +543,15 @@ class SchoolsByParser {
                         withClass = "row-pupil"
                         findAll {
                             this.forEach { row ->
-                                val pupilID = row.a {
-                                    withClass = "user_type_1"; nullableFind {
-                                    findFirst {
-                                        attribute("href").removePrefix("/pupil/").toIntOrNull()
+                                val pupilID = row.customTag(
+                                    "",
+                                    "a.user_type_1, a.user_type_2, a.user_type_3, a.user_type_4, a.user_type_5, a.user_type_6, a.user_type_7"
+                                ) {
+                                    nullableFind {
+                                        findFirst {
+                                            attribute("href").removePrefix("/pupil/").toIntOrNull()
+                                        }
                                     }
-                                }
                                 }
                                 val history = nullableFind {
                                     val entries = mutableListOf<Pair<Pair<Int?, Int>, LocalDate>>()
@@ -556,18 +560,19 @@ class SchoolsByParser {
                                         li {
                                             findAll {
                                                 forEach {
-                                                    entries.add(when (it.a {
-                                                        findAll {
-                                                            this.size
-                                                        }
-                                                    }) {
-                                                        1, 2 -> {
-                                                            Pair(
-                                                                Pair(null, it.a {
-                                                                    findFirst {
-                                                                        attribute("href").removePrefix("/class/")
-                                                                            .toInt()
-                                                                    }
+                                                    entries.add(
+                                                        when (it.a {
+                                                            findAll {
+                                                                this.size
+                                                            }
+                                                        }) {
+                                                            1, 2 -> {
+                                                                Pair(
+                                                                    Pair(null, it.a {
+                                                                        findFirst {
+                                                                            attribute("href").removePrefix("/class/")
+                                                                                .toInt()
+                                                                        }
                                                                 }), LocalDate.ofInstant(
                                                                     dateFormat.parse(dateRegex.find(it.ownText)!!.value)
                                                                         .toInstant(), ZoneId.of("Europe/Minsk")
@@ -615,6 +620,185 @@ class SchoolsByParser {
                 }
                 Result.success(dates)
             }
+
+        suspend fun getLessonsListByJournal(
+            classID: Int, journalID: Int, classSubgroupTitles: Map<Int, String>, credentials: Credentials
+        ): Result<List<Lesson>> = wrapReturn("${schoolSubdomain}class/$classID/lessons/$journalID/show", credentials) {
+            val dateRegex = Regex("""(\d{1,2})\s+([а-яА-Я]+)\s*(\d{4})?""")
+            val dateFormat = SimpleDateFormat("dd MMMM yyyy", Locale.forLanguageTag("ru"))
+
+            fun DocElement.parseTable(title: String, subgroupID: Int?, teacherID: Int) = this.table {
+                tbody {
+                    tr {
+                        findAll {
+                            this.mapNotNull { row ->
+                                runCatching {
+                                    val (id, date) = row.td {
+                                        withClass = "date"
+                                        return@td findFirst {
+                                            val date =
+                                                LocalDate.ofInstant(dateFormat.parse(dateRegex.find(text)!!.value.let {
+                                                    if (it.takeLast(4)
+                                                            .toIntOrNull() == null
+                                                    ) "$it ${LocalDate.now().year}"
+                                                    else it
+                                                }).toInstant(), ZoneId.of("Europe/Minsk"))
+                                            val id = this.attribute("lesson_id").toLong()
+                                            id to date
+                                        }
+                                    }
+                                    val place = td { withClass = "number"; findFirst { text.toInt() } }
+                                    Lesson(
+                                        id,
+                                        journalID,
+                                        setOf(teacherID),
+                                        subgroupID?.let { setOf(it) },
+                                        title,
+                                        date,
+                                        place
+                                    )
+                                }.let {
+                                    if (it.isSuccess) it.getOrNull() else {
+                                        Logger.getAnonymousLogger()
+                                            .warning("Failed to parse lesson: ${it.exceptionOrNull()}")
+                                        null
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            htmlDocument(it.bodyAsText()) {
+                val title = div {
+                    withClass = "title_box2"
+                    a {
+                        findAll {
+                            this.first { it.attribute("href").startsWith("/journal") }.ownText
+                        }
+                    }
+                }
+                val isSubgroup = div {
+                    withClass = "title_box2"
+                    h1 {
+                        findFirst {
+                            text.contains("(по подгруппам)") // The only other way to know that is to check the title of a table, which is only known at the table-parsing moment
+                        }
+                    }
+                }
+                return@htmlDocument Result.success(div {
+                    withClass = "group"
+                    nullableFind { // There may be a subject without lessons
+                        findAll {
+                            val mapped = map {
+                                val (subgroup, teacherID) = it.div {
+                                    println("journal: $journalID")
+                                    withClass = "title"
+                                    val subgroup = if (isSubgroup) {
+                                        this.h2 {
+                                            findFirst {
+                                                classSubgroupTitles.entries.firstOrNull {
+                                                    it.value == text.trim().removePrefix("Подгруппа \"")
+                                                        .removeSuffix("\"")
+                                                }?.key
+                                            }
+                                        }
+                                    } else null
+                                    val teacher = it.p {
+                                        withClass = "teacher"
+                                        "a.user_type_1, a.user_type_2, a.user_type_3, a.user_type_4, a.user_type_5, a.user_type_6, a.user_type_7" {
+                                            findFirst {
+                                                attribute("href").removePrefix("/teacher/")
+                                                    .removePrefix("/administration/").removePrefix("/director/").toInt()
+                                            }
+                                        }
+                                    }
+                                    Pair(subgroup, teacher)
+                                }
+                                it.parseTable(title, subgroup, teacherID)
+                            }.flatten()
+                            val subgroups =
+                                if (isSubgroup) mapped.map { it.subgroups ?: setOf() }.flatten().toSet() else null
+                            val teachers = mapped.map { it.teachers }.flatten().toSet()
+                            mapped.map { it.copy(subgroups = subgroups, teachers = teachers) }
+                        }
+                    } ?: emptyList()
+                })
+            }
+        }
+
+        suspend fun getAllLessons(
+            classID: Int, classSubgroupTitles: Map<Int, String>, credentials: Credentials
+        ): Result<List<Lesson>> = wrapReturn("${schoolSubdomain}class/$classID/lessons", credentials) {
+            val journals = htmlDocument(it.bodyAsText()) {
+                val regex = Regex("/class/\\d+/lessons/(\\d+)/show")
+                return@htmlDocument div {
+                    withClass = "llitm_center2"
+                    a {
+                        findAll {
+                            this.map {
+                                regex.find(it.attribute("href"))!!.groupValues[1].toInt()
+                            }
+                        }
+                    }
+                }
+            }
+            Result.success(journals.mapNotNull {
+                getLessonsListByJournal(classID, it, classSubgroupTitles, credentials).let {
+                    if (it.isFailure) {
+                        println(it.exceptionOrNull())
+                        null
+                    } else it.getOrNull()
+                }
+            }.flatten())
+        }
+
+        suspend fun getSubgroups(classID: Int, credentials: Credentials): Result<List<Subgroup>> =
+            wrapReturn("${schoolSubdomain}class/$classID/subgroups", credentials) {
+                Result.success(htmlDocument(it.bodyAsText()) {
+                    div {
+                        withClass = "class_subgroup"
+                        findAll {
+                            map {
+                                val title = it.div {
+                                    withClass = "title"
+                                    b {
+                                        findFirst {
+                                            ownText
+                                        }
+                                    }
+                                }
+                                val id = it.div {
+                                    withClass = "title"
+                                    a {
+                                        findFirst {
+                                            attribute("href").removePrefix("/class/$classID/subgroup/")
+                                                .removeSuffix("/edit").toInt()
+                                        }
+                                    }
+                                }
+                                val pupils = it.ul {
+                                    withClass = "pupils"
+                                    li {
+                                        findAll {
+                                            mapNotNull {
+                                                if (it.a { findAll { this } }.size >= 2) null
+                                                else it.a {
+                                                    findFirst {
+                                                        attribute("href").removePrefix("/pupil/").toInt()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Subgroup(id, title, pupils)
+                            }
+                        }
+                    }
+                })
+            }
     }
 
     /**
@@ -656,12 +840,12 @@ class SchoolsByParser {
 
         /**
          * Returns timetable for given [teacherID].
-         * !NOTE!: This method will not return other teachers in [Lesson] (i.e. other subgroups teachers).
+         * !NOTE!: This method will not return other teachers in [TimetableLesson] (i.e. other subgroups teachers).
          * Please, call [CLASS.getTimetable] to get timetable with subgroups teachers
          */
         suspend fun getTimetable(teacherID: Int, credentials: Credentials): Result<TwoShiftsTimetable> {
             return wrapReturn("${schoolSubdomain}teacher/$teacherID/timetable", credentials) {
-                val firstShiftTimetable = mutableMapOf<DayOfWeek, Array<Lesson>>(
+                val firstShiftTimetable = mutableMapOf<DayOfWeek, Array<TimetableLesson>>(
                     Pair(DayOfWeek.MONDAY, arrayOf()),
                     Pair(DayOfWeek.TUESDAY, arrayOf()),
                     Pair(DayOfWeek.WEDNESDAY, arrayOf()),
@@ -669,7 +853,7 @@ class SchoolsByParser {
                     Pair(DayOfWeek.FRIDAY, arrayOf()),
                     Pair(DayOfWeek.SATURDAY, arrayOf())
                 )
-                val secondShiftTimetable = mutableMapOf<DayOfWeek, Array<Lesson>>(
+                val secondShiftTimetable = mutableMapOf<DayOfWeek, Array<TimetableLesson>>(
                     Pair(DayOfWeek.MONDAY, arrayOf()),
                     Pair(DayOfWeek.TUESDAY, arrayOf()),
                     Pair(DayOfWeek.WEDNESDAY, arrayOf()),
@@ -713,7 +897,7 @@ class SchoolsByParser {
                                         if (!isSecondShift) {
                                             firstShiftTimetable[DayOfWeek.values()[index - 2]] =
                                                 (firstShiftTimetable[DayOfWeek.values()[index - 2]] ?: arrayOf()).let {
-                                                    it + Lesson(
+                                                    it + TimetableLesson(
                                                         place.toShort(),
                                                         bells,
                                                         unfoldLessonTitle(name),
@@ -725,7 +909,7 @@ class SchoolsByParser {
                                         } else {
                                             secondShiftTimetable[DayOfWeek.values()[index - 2]] =
                                                 (secondShiftTimetable[DayOfWeek.values()[index - 2]] ?: arrayOf()).let {
-                                                    it + Lesson(
+                                                    it + TimetableLesson(
                                                         place.toShort(),
                                                         bells,
                                                         unfoldLessonTitle(name),
@@ -874,8 +1058,10 @@ class SchoolsByParser {
                                 tr {
                                     findAll {
                                         for (row in this) {
-                                            val (name, pupilID) = row.a {
-                                                withClass = "user_type_1"
+                                            val (name, pupilID) = row.customTag(
+                                                "",
+                                                "a.user_type_1, a.user_type_2, a.user_type_3, a.user_type_4, a.user_type_5, a.user_type_6, a.user_type_7"
+                                            ) {
                                                 findFirst {
                                                     Pair(
                                                         Name.fromString(ownText),
