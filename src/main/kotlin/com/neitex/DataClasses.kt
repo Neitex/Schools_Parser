@@ -37,6 +37,7 @@ open class User(val id: Int, val type: SchoolsByUserType, val name: Name) {
 
 data class SchoolClass(val id: Int, val classTeacherID: Int, val classTitle: String)
 
+@Suppress("unused")
 class Pupil(id: Int, name: Name, val classID: Int) : User(id, SchoolsByUserType.PUPIL, name)
 
 data class TimeConstraints(val startHour: Short, val startMinute: Short, val endHour: Short, val endMinute: Short) {
@@ -216,8 +217,8 @@ class TwoShiftsTimetable {
 data class Lesson(
     val lessonID: Long,
     val journalID: Int?,
-    val teachers: Set<Int>,
-    val subgroups: Set<Int>?,
+    val teacher: Int,
+    val subgroup: Int?,
     val title: String,
     val date: LocalDate,
     val place: Int
@@ -227,4 +228,9 @@ data class Subgroup(
     val subgroupID: Int,
     val title: String,
     val pupils: List<Int>
+)
+
+data class TimetablePlace(
+    val place: Int,
+    val constraints: TimeConstraints
 )

@@ -86,13 +86,15 @@ class SchoolsByParser {
         }
 
         internal suspend fun <T> wrapReturn(
-            requestUrl: String, credentials: Credentials, returnValue: suspend (HttpResponse) -> Result<T>
+            requestUrl: String, credentials: Credentials?, returnValue: suspend (HttpResponse) -> Result<T>
         ): Result<T> {
             return try {
                 val response = client.get {
                     url(requestUrl)
-                    cookie("csrftoken", credentials.csrfToken)
-                    cookie("sessionid", credentials.sessionID)
+                    credentials?.also {
+                        cookie("csrftoken", credentials.csrfToken)
+                        cookie("sessionid", credentials.sessionID)
+                    }
                 }
                 if (!response.checkCredentialsClear() || response.request.url.toString()
                         .contains("already-redirected")
@@ -535,7 +537,7 @@ class SchoolsByParser {
             classID: Int, credentials: Credentials
         ): Result<Map<Int, List<Pair<Pair<Int?, Int>, LocalDate>>>> =
             wrapReturn("${schoolSubdomain}/class/$classID/pupils/transfer", credentials) { response ->
-                val dateRegex = Regex("""(\d{1,2})\s+([а-яА-Я]+)\s+(\d{4})""")
+                val dateRegex = Regex("""(\d{1,2})\s+([А-я]+)\s+(\d{4})""")
                 val dateFormat = SimpleDateFormat("dd MMMM yyyy", Locale.forLanguageTag("ru"))
                 val dates = mutableMapOf<Int, List<Pair<Pair<Int?, Int>, LocalDate>>>()
                 htmlDocument(response.bodyAsText()) {
@@ -573,26 +575,26 @@ class SchoolsByParser {
                                                                             attribute("href").removePrefix("/class/")
                                                                                 .toInt()
                                                                         }
-                                                                }), LocalDate.ofInstant(
-                                                                    dateFormat.parse(dateRegex.find(it.ownText)!!.value)
-                                                                        .toInstant(), ZoneId.of("Europe/Minsk")
+                                                                    }), LocalDate.ofInstant(
+                                                                        dateFormat.parse(dateRegex.find(it.ownText)!!.value)
+                                                                            .toInstant(), ZoneId.of("Europe/Minsk")
+                                                                    )
                                                                 )
-                                                            )
-                                                        }
-                                                        3, 4 -> {
-                                                            Pair(
-                                                                Pair(it.a {
-                                                                    findFirst {
-                                                                        attribute("href").removePrefix("/class/")
-                                                                            .toInt()
-                                                                    }
-                                                                }, it.a {
-                                                                    findSecond {
-                                                                        attribute("href").removePrefix("/class/")
-                                                                            .toInt()
-                                                                    }
-                                                                }), LocalDate.ofInstant(
-                                                                    dateFormat.parse(dateRegex.find(it.ownText)!!.value)
+                                                            }
+                                                            3, 4 -> {
+                                                                Pair(
+                                                                    Pair(it.a {
+                                                                        findFirst {
+                                                                            attribute("href").removePrefix("/class/")
+                                                                                .toInt()
+                                                                        }
+                                                                    }, it.a {
+                                                                        findSecond {
+                                                                            attribute("href").removePrefix("/class/")
+                                                                                .toInt()
+                                                                        }
+                                                                    }), LocalDate.ofInstant(
+                                                                        dateFormat.parse(dateRegex.find(it.ownText)!!.value)
                                                                         .toInstant(), ZoneId.of("Europe/Minsk")
                                                                 )
                                                             )
@@ -624,7 +626,7 @@ class SchoolsByParser {
         suspend fun getLessonsListByJournal(
             classID: Int, journalID: Int, classSubgroupTitles: Map<Int, String>, credentials: Credentials
         ): Result<List<Lesson>> = wrapReturn("${schoolSubdomain}class/$classID/lessons/$journalID/show", credentials) {
-            val dateRegex = Regex("""(\d{1,2})\s+([а-яА-Я]+)\s*(\d{4})?""")
+            val dateRegex = Regex("""(\d{1,2})\s+([А-я]+)\s*(\d{4})?""")
             val dateFormat = SimpleDateFormat("dd MMMM yyyy", Locale.forLanguageTag("ru"))
 
             fun DocElement.parseTable(title: String, subgroupID: Int?, teacherID: Int) = this.table {
@@ -649,13 +651,7 @@ class SchoolsByParser {
                                     }
                                     val place = td { withClass = "number"; findFirst { text.toInt() } }
                                     Lesson(
-                                        id,
-                                        journalID,
-                                        setOf(teacherID),
-                                        subgroupID?.let { setOf(it) },
-                                        title,
-                                        date,
-                                        place
+                                        id, journalID, teacherID, subgroupID, title, date, place
                                     )
                                 }.let {
                                     if (it.isSuccess) it.getOrNull() else {
@@ -693,7 +689,6 @@ class SchoolsByParser {
                         findAll {
                             val mapped = map {
                                 val (subgroup, teacherID) = it.div {
-                                    println("journal: $journalID")
                                     withClass = "title"
                                     val subgroup = if (isSubgroup) {
                                         this.h2 {
@@ -718,10 +713,7 @@ class SchoolsByParser {
                                 }
                                 it.parseTable(title, subgroup, teacherID)
                             }.flatten()
-                            val subgroups =
-                                if (isSubgroup) mapped.map { it.subgroups ?: setOf() }.flatten().toSet() else null
-                            val teachers = mapped.map { it.teachers }.flatten().toSet()
-                            mapped.map { it.copy(subgroups = subgroups, teachers = teachers) }
+                            mapped
                         }
                     } ?: emptyList()
                 })
@@ -747,7 +739,8 @@ class SchoolsByParser {
             Result.success(journals.mapNotNull {
                 getLessonsListByJournal(classID, it, classSubgroupTitles, credentials).let {
                     if (it.isFailure) {
-                        println(it.exceptionOrNull())
+                        Logger.getLogger("SchoolsByParser")
+                            .log(Level.WARNING, "Failed to get lessons for journal $it", it.exceptionOrNull())
                         null
                     } else it.getOrNull()
                 }
@@ -896,28 +889,26 @@ class SchoolsByParser {
                                         }
                                         if (!isSecondShift) {
                                             firstShiftTimetable[DayOfWeek.values()[index - 2]] =
-                                                (firstShiftTimetable[DayOfWeek.values()[index - 2]] ?: arrayOf()).let {
-                                                    it + TimetableLesson(
-                                                        place.toShort(),
-                                                        bells,
-                                                        unfoldLessonTitle(name),
-                                                        classID,
-                                                        arrayOf(teacherID),
-                                                        journalID
-                                                    )
-                                                }
+                                                (firstShiftTimetable[DayOfWeek.values()[index - 2]]
+                                                    ?: arrayOf()) + TimetableLesson(
+                                                    place.toShort(),
+                                                    bells,
+                                                    unfoldLessonTitle(name),
+                                                    classID,
+                                                    arrayOf(teacherID),
+                                                    journalID
+                                                )
                                         } else {
                                             secondShiftTimetable[DayOfWeek.values()[index - 2]] =
-                                                (secondShiftTimetable[DayOfWeek.values()[index - 2]] ?: arrayOf()).let {
-                                                    it + TimetableLesson(
-                                                        place.toShort(),
-                                                        bells,
-                                                        unfoldLessonTitle(name),
-                                                        classID,
-                                                        arrayOf(teacherID),
-                                                        journalID
-                                                    )
-                                                }
+                                                (secondShiftTimetable[DayOfWeek.values()[index - 2]]
+                                                    ?: arrayOf()) + TimetableLesson(
+                                                    place.toShort(),
+                                                    bells,
+                                                    unfoldLessonTitle(name),
+                                                    classID,
+                                                    arrayOf(teacherID),
+                                                    journalID
+                                                )
                                         }
                                     }
                                 }
@@ -1090,5 +1081,60 @@ class SchoolsByParser {
                 }
             }
         }
+    }
+
+    object SCHOOL {
+        suspend fun getBells(): Result<Pair<List<TimetablePlace>, List<TimetablePlace>>> =
+            wrapReturn("${schoolSubdomain}timetables/bells", null) { httpResponse ->
+                fun CssSelector.parseTable() = this.table {
+                    tbody {
+                        tr {
+                            findAll {
+                                mapNotNull { docElement ->
+                                    val place = docElement.td {
+                                        withClass = "number"
+                                        findFirst {
+                                            ownText.removeSuffix(".").toInt()
+                                        }
+                                    }
+                                    val constraints = kotlin.runCatching {
+                                        docElement.td {
+                                            withClass = "time"
+                                            findFirst {
+                                                ownText.lines().filterNot { it.isBlank() }
+                                                    .joinToString(separator = "") {
+                                                        it.trim()
+                                                    }.split(" - ").let { stringList ->
+                                                        val (beginHour, beginMinute) = stringList.first().split(":")
+                                                            .let {
+                                                                Pair(it.first().toShort(), it.last().toShort())
+                                                            }
+                                                        val (endHour, endMinute) = stringList.last().split(":").let {
+                                                            Pair(it.first().toShort(), it.last().toShort())
+                                                        }
+                                                        TimeConstraints(beginHour, beginMinute, endHour, endMinute)
+                                                    }
+                                            }
+                                        }
+                                    }
+                                    if (constraints.isSuccess) TimetablePlace(place, constraints.getOrThrow())
+                                    else null
+                                }
+                            }
+                        }
+                    }
+                }
+                htmlDocument(httpResponse.bodyAsText()) {
+                    val firstShiftBells = div {
+                        withClass = "clmn1"
+                        this.parseTable()
+                    }
+                    val secondShiftBells = div {
+                        withClass = "clmn2"
+                        this.parseTable()
+                    }
+                    Result.success(Pair(firstShiftBells, secondShiftBells))
+                }
+            }
     }
 }

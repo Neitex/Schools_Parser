@@ -469,97 +469,41 @@ internal class SchoolsByParserTest {
 
         @Test
         @DisplayName("Get lessons by journal ID")
+        @DisabledIfEnvironmentVariable(named = "skipJournalTests", matches = "true")
         fun testGetLessonsJournalID() = runBlocking {
             val result = SchoolsByParser.CLASS.getLessonsListByJournal(
-                8,
-                100127,
-                subgroups.associate { it.subgroupID to it.title },
-                validTeacherCredentials
+                8, 100127, subgroups.associate { it.subgroupID to it.title }, validTeacherCredentials
             )
             println(result)
             assert(result.isSuccess)
             assertContentEquals(
                 listOf(
                     Lesson(
-                        81645560,
-                        100127,
-                        setOf(104437),
-                        null,
-                        "География",
-                        LocalDate.of(2021, Month.SEPTEMBER, 1),
-                        3
+                        81645560, 100127, 104437, null, "География", LocalDate.of(2021, Month.SEPTEMBER, 1), 3
                     ),
                     Lesson(
-                        81645593,
-                        100127,
-                        setOf(104437),
-                        null,
-                        "География",
-                        LocalDate.of(2021, Month.SEPTEMBER, 8),
-                        3
+                        81645593, 100127, 104437, null, "География", LocalDate.of(2021, Month.SEPTEMBER, 8), 3
                     ),
                     Lesson(
-                        81645626,
-                        100127,
-                        setOf(104437),
-                        null,
-                        "География",
-                        LocalDate.of(2021, Month.SEPTEMBER, 15),
-                        3
+                        81645626, 100127, 104437, null, "География", LocalDate.of(2021, Month.SEPTEMBER, 15), 3
                     ),
                     Lesson(
-                        81645659,
-                        100127,
-                        setOf(104437),
-                        null,
-                        "География",
-                        LocalDate.of(2021, Month.SEPTEMBER, 22),
-                        3
+                        81645659, 100127, 104437, null, "География", LocalDate.of(2021, Month.SEPTEMBER, 22), 3
                     ),
                     Lesson(
-                        81645692,
-                        100127,
-                        setOf(104437),
-                        null,
-                        "География",
-                        LocalDate.of(2021, Month.SEPTEMBER, 29),
-                        3
+                        81645692, 100127, 104437, null, "География", LocalDate.of(2021, Month.SEPTEMBER, 29), 3
                     ),
                     Lesson(
-                        81645725,
-                        100127,
-                        setOf(104437),
-                        null,
-                        "География",
-                        LocalDate.of(2021, Month.OCTOBER, 6),
-                        3
+                        81645725, 100127, 104437, null, "География", LocalDate.of(2021, Month.OCTOBER, 6), 3
                     ),
                     Lesson(
-                        81645758,
-                        100127,
-                        setOf(104437),
-                        null,
-                        "География",
-                        LocalDate.of(2021, Month.OCTOBER, 13),
-                        3
+                        81645758, 100127, 104437, null, "География", LocalDate.of(2021, Month.OCTOBER, 13), 3
                     ),
                     Lesson(
-                        81645791,
-                        100127,
-                        setOf(104437),
-                        null,
-                        "География",
-                        LocalDate.of(2021, Month.OCTOBER, 20),
-                        3
+                        81645791, 100127, 104437, null, "География", LocalDate.of(2021, Month.OCTOBER, 20), 3
                     ),
                     Lesson(
-                        81645824,
-                        100127,
-                        setOf(104437),
-                        null,
-                        "География",
-                        LocalDate.of(2021, Month.OCTOBER, 27),
-                        3
+                        81645824, 100127, 104437, null, "География", LocalDate.of(2021, Month.OCTOBER, 27), 3
                     ),
                 ), result.getOrThrow().take(9)
             )
@@ -571,15 +515,15 @@ internal class SchoolsByParserTest {
         fun timeGetAllLessons() = runBlocking {
             val result = measureTimedValue {
                 SchoolsByParser.CLASS.getAllLessons(
-                    8,
-                    subgroups.associate { it.subgroupID to it.title },
-                    validTeacherCredentials
+                    8, subgroups.associate { it.subgroupID to it.title }, validTeacherCredentials
                 )
             }
             println(result)
             assert(result.duration.inWholeMinutes < 10)
             assert(result.value.isSuccess)
-            assert(result.value.getOrThrow().isNotEmpty())
+            if (LocalDate.now().month !in Month.JUNE..Month.OCTOBER) {
+                assert(result.value.getOrThrow().isNotEmpty())
+            }
             println("Found ${result.value.getOrThrow().size} lessons")
         }
     }
@@ -822,6 +766,43 @@ internal class SchoolsByParserTest {
             val result = SchoolsByParser.PARENT.getPupils(parentID = 105189, invalidCredentials)
             assert(result.isFailure)
             assert(result.exceptionOrNull() is BadSchoolsByCredentials)
+        }
+    }
+
+    @Nested
+    @DisplayName("School data tests")
+    inner class SchoolDataTests {
+        @Test
+        @DisplayName("Get school's bell timetable")
+        fun testSchoolTimetableValidSchoolIDValidCredentials() = runBlocking {
+            val result = SchoolsByParser.SCHOOL.getBells()
+            assert(result.isSuccess) {
+                result.exceptionOrNull()!!
+            }
+            assertEquals(
+                listOf(
+                    TimetablePlace(1, TimeConstraints(8, 30, 9, 15)),
+                    TimetablePlace(2, TimeConstraints(9, 25, 10, 10)),
+                    TimetablePlace(3, TimeConstraints(10, 20, 11, 5)),
+                    TimetablePlace(4, TimeConstraints(11, 25, 12, 10)),
+                    TimetablePlace(5, TimeConstraints(12, 25, 13, 10)),
+                    TimetablePlace(6, TimeConstraints(13, 20, 14, 5)),
+                    TimetablePlace(7, TimeConstraints(14, 15, 15, 0)),
+                    TimetablePlace(8, TimeConstraints(15, 10, 15, 55)),
+                ), result.getOrThrow().first
+            )
+            assertEquals(
+                listOf(
+                    TimetablePlace(1, TimeConstraints(12, 0, 12, 45)),
+                    TimetablePlace(2, TimeConstraints(13, 0, 13, 45)),
+                    TimetablePlace(3, TimeConstraints(14, 0, 14, 45)),
+                    TimetablePlace(4, TimeConstraints(15, 0, 15, 45)),
+                    TimetablePlace(5, TimeConstraints(16, 0, 16, 45)),
+                    TimetablePlace(6, TimeConstraints(17, 0, 17, 45)),
+                    TimetablePlace(7, TimeConstraints(18, 0, 18, 45)),
+                    TimetablePlace(8, TimeConstraints(19, 0, 19, 45)),
+                ), result.getOrThrow().second
+            )
         }
     }
 }

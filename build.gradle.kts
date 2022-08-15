@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.neitex"
-version = "0.1.5"
+version = "0.1.7"
 val libraryVersion = version.toString()
 
 repositories {
@@ -16,13 +16,13 @@ repositories {
 }
 
 dependencies {
-    implementation("io.ktor:ktor-client-core:2.0.0")
-    implementation("io.ktor:ktor-client-cio:2.0.0")
-    implementation("io.ktor:ktor-client-logging:2.0.0")
+    implementation("io.ktor:ktor-client-core:2.0.3")
+    implementation("io.ktor:ktor-client-cio:2.0.3")
+    implementation("io.ktor:ktor-client-logging:2.0.3")
     implementation("ch.qos.logback:logback-classic:1.2.11")
-    implementation("it.skrape:skrapeit:1.2.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.1-native-mt")
-    testImplementation("org.junit.jupiter:junit-jupiter:5.8.2")
+    implementation("it.skrape:skrapeit:1.2.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.3-native-mt")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.9.0")
     testImplementation(kotlin("test"))
     implementation(kotlin("stdlib-jdk8"))
 }
