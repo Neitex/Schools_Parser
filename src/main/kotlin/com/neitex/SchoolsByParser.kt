@@ -491,7 +491,7 @@ class SchoolsByParser {
                     select {
                         withId = "id_smena"
                         option {
-                            withAttribute = Pair("selected", "selected")
+                            withAttribute = Pair("selected", "")
                             findFirst {
                                 return@findFirst Result.success(attribute("value") != "1")
                             }
@@ -581,6 +581,7 @@ class SchoolsByParser {
                                                                     )
                                                                 )
                                                             }
+
                                                             3, 4 -> {
                                                                 Pair(
                                                                     Pair(it.a {
@@ -595,18 +596,19 @@ class SchoolsByParser {
                                                                         }
                                                                     }), LocalDate.ofInstant(
                                                                         dateFormat.parse(dateRegex.find(it.ownText)!!.value)
-                                                                        .toInstant(), ZoneId.of("Europe/Minsk")
+                                                                            .toInstant(), ZoneId.of("Europe/Minsk")
+                                                                    )
                                                                 )
-                                                            )
-                                                        }
-                                                        else -> throw IllegalStateException("Unexpected value: ${
-                                                            it.a {
-                                                                findAll {
-                                                                    this.size
-                                                                }
                                                             }
-                                                        }")
-                                                    })
+
+                                                            else -> throw IllegalStateException("Unexpected value: ${
+                                                                it.a {
+                                                                    findAll {
+                                                                        this.size
+                                                                    }
+                                                                }
+                                                            }")
+                                                        })
                                                 }
                                             }
                                         }
@@ -919,26 +921,30 @@ class SchoolsByParser {
 
                 htmlDocument(it.bodyAsText()) {
                     val availableShifts = run {
-                        when (div { withClass = "cc_timeTable"; findAll { this.size } }) {
-                            2 -> Pair(true, true)
-                            1 -> {
-                                var firstShift = false
-                                var secondShift = false
-                                div {
-                                    withClass = "tabs1_cbb"
-                                    findFirst {
-                                        for ((index, child) in children.withIndex()) {
-                                            if (child.className == "cc_timeTable") {
-                                                if (index == 1) firstShift = true
-                                                else secondShift = true
+                        val result = div { withClass = "cc_timeTable"; kotlin.runCatching { findAll { this.size } } }
+                        if (result.isSuccess)
+                            when (result.getOrNull()) {
+                                2 -> Pair(true, true)
+                                1 -> {
+                                    var firstShift = false
+                                    var secondShift = false
+                                    div {
+                                        withClass = "tabs1_cbb"
+                                        findFirst {
+                                            for ((index, child) in children.withIndex()) {
+                                                if (child.className == "cc_timeTable") {
+                                                    if (index == 1) firstShift = true
+                                                    else secondShift = true
+                                                }
                                             }
                                         }
                                     }
+                                    Pair(firstShift, secondShift)
                                 }
-                                Pair(firstShift, secondShift)
+
+                                else -> throw UnknownError("Shifts detection failure: too many tables")
                             }
-                            else -> throw UnknownError("Shifts detection failure: too many tables")
-                        }
+                        else Pair(false, false)
                     }
                     if (availableShifts.first) { // parse first shift
                         table {

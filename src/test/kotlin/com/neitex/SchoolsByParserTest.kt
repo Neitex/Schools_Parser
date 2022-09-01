@@ -296,7 +296,9 @@ internal class SchoolsByParserTest {
         @DisplayName("Get class timetable using valid class ID and valid credentials with walking to journal")
         fun testGettingTimetableValidClassIDValidCredentialsWithWalking() = runBlocking {
             val result = SchoolsByParser.CLASS.getTimetable(classID = 8, validTeacherCredentials, walkToJournals = true)
-            assert(result.isSuccess)
+            assert(result.isSuccess) {
+                result.exceptionOrNull().toString()
+            }
             val timetable = result.getOrThrow()
             assertAll({
                 assertNotNull(result.getOrThrow())
