@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.neitex"
-version = "0.1.8"
+version = "0.1.14"
 val libraryVersion = version.toString()
 
 repositories {
@@ -19,7 +19,7 @@ dependencies {
     implementation("io.ktor:ktor-client-core:2.0.3")
     implementation("io.ktor:ktor-client-cio:2.0.3")
     implementation("io.ktor:ktor-client-logging:2.0.3")
-    implementation("ch.qos.logback:logback-classic:1.2.11")
+    implementation("ch.qos.logback:logback-classic:1.4.3")
     implementation("it.skrape:skrapeit:1.2.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4")
     testImplementation("org.junit.jupiter:junit-jupiter:5.9.0")

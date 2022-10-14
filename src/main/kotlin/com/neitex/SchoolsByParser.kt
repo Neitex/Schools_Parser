@@ -15,9 +15,7 @@ import it.skrape.selects.eachText
 import it.skrape.selects.html5.*
 import java.net.http.HttpConnectTimeoutException
 import java.text.SimpleDateFormat
-import java.time.DayOfWeek
-import java.time.LocalDate
-import java.time.ZoneId
+import java.time.*
 import java.util.*
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -65,7 +63,11 @@ class SchoolsByParser {
          * Example: https://demo.schools.by/ (notice trailing slash)
          */
         fun setSubdomain(url: String) {
-            schoolSubdomain = url
+            if (!url.matches(Regex("https?://[a-zA-Z0-9-]+\\.schools\\.by/"))) {
+                throw IllegalArgumentException("Invalid subdomain")
+            } else {
+                schoolSubdomain = url
+            }
         }
 
         /**
@@ -85,8 +87,8 @@ class SchoolsByParser {
             null
         }
 
-        internal suspend fun <T> wrapReturn(
-            requestUrl: String, credentials: Credentials?, returnValue: suspend (HttpResponse) -> Result<T>
+        internal suspend inline fun <T> wrapReturn(
+            requestUrl: String, credentials: Credentials?, returnValue: (HttpResponse) -> Result<T>
         ): Result<T> {
             return try {
                 val response = client.get {
@@ -123,19 +125,37 @@ class SchoolsByParser {
          * Logins user to Schools.by and returns [Credentials]
          */
         suspend fun getLoginCookies(username: String, password: String): Result<Credentials> {
+            val (csrf, addFields) = wrapReturn("https://schools.by/login", null) {
+                val csrf = it.setCookie().find { it.name.lowercase() == "csrftoken" }?.value
+                    ?: return@wrapReturn Result.failure(UnknownError("CSRF token not found"))
+                val inputs = htmlDocument(it.bodyAsText()) {
+                    div {
+                        withClass = "login_page_body"
+                        form {
+                            input {
+                                withAttribute = "type" to "hidden"
+                                findAll {
+                                    map { it.attribute("name") to it.attribute("value") }
+                                }
+                            }
+                        }
+                    }
+                }.filter {
+                    it.first !in listOf("submit", "password", "username")
+                }.toMap()
+                Result.success(csrf to inputs)
+            }.fold({ it }, { return Result.failure(it) })
             try {
-                val firstCSRFtoken = run {
-                    val response = client.get("https://schools.by/login")
-                    response.setCookie().find { it.name == "csrftoken" }
-                } ?: return Result.failure(UnknownError("First stage of login failed: csrftoken cookie was not found"))
                 val (secondCSRFtoken, sessionid) = run {
                     val response =
                         client.submitForm(url = "https://schools.by/login", formParameters = Parameters.build {
-                            append("csrfmiddlewaretoken", firstCSRFtoken.value)
                             append("username", username)
                             append("password", password)
+                            addFields.forEach { entry ->
+                                append(entry.key, entry.value)
+                            }
                         }) {
-                            cookie("csrftoken", firstCSRFtoken.value)
+                            cookie("csrftoken", csrf)
                             header(HttpHeaders.Referrer, "https://schools.by/login")
                         }
                     if ((response.headers["location"]
@@ -253,17 +273,24 @@ class SchoolsByParser {
                         }
                     }
                     val classTeacherID = div {
-                        withClass = "grid_st_r"
+                        withClass = "main_grid_center_column"
                         div {
-                            withClass = "r_user_info"
-                            p {
-                                withClass = "name"
-                                customTag(
-                                    "",
-                                    "a.user_type_1, a.user_type_2, a.user_type_3, a.user_type_4, a.user_type_5, a.user_type_6, a.user_type_7"
-                                ) {
-                                    findFirst {
-                                        attribute("href").removePrefix("${schoolSubdomain}teacher/").toIntOrNull()
+                            withClass = "main_grid_content"
+                            div {
+                                withClass = "grid_st_r"
+                                div {
+                                    withClass = "r_user_info"
+                                    customTag("", "> p.role + p.name") {
+                                        a {
+                                            println(this.toCssSelector)
+                                            findAll {
+                                                println(this.joinToString { "$it---${it.toCssSelector}" })
+                                            }
+                                            findFirst {
+                                                attribute("href").removePrefix("${schoolSubdomain}teacher/")
+                                                    .toIntOrNull()
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -562,53 +589,52 @@ class SchoolsByParser {
                                         li {
                                             findAll {
                                                 forEach {
-                                                    entries.add(
-                                                        when (it.a {
-                                                            findAll {
-                                                                this.size
-                                                            }
-                                                        }) {
-                                                            1, 2 -> {
-                                                                Pair(
-                                                                    Pair(null, it.a {
-                                                                        findFirst {
-                                                                            attribute("href").removePrefix("/class/")
-                                                                                .toInt()
-                                                                        }
-                                                                    }), LocalDate.ofInstant(
-                                                                        dateFormat.parse(dateRegex.find(it.ownText)!!.value)
-                                                                            .toInstant(), ZoneId.of("Europe/Minsk")
-                                                                    )
-                                                                )
-                                                            }
-
-                                                            3, 4 -> {
-                                                                Pair(
-                                                                    Pair(it.a {
-                                                                        findFirst {
-                                                                            attribute("href").removePrefix("/class/")
-                                                                                .toInt()
-                                                                        }
-                                                                    }, it.a {
-                                                                        findSecond {
-                                                                            attribute("href").removePrefix("/class/")
-                                                                                .toInt()
-                                                                        }
-                                                                    }), LocalDate.ofInstant(
-                                                                        dateFormat.parse(dateRegex.find(it.ownText)!!.value)
-                                                                            .toInstant(), ZoneId.of("Europe/Minsk")
-                                                                    )
-                                                                )
-                                                            }
-
-                                                            else -> throw IllegalStateException("Unexpected value: ${
-                                                                it.a {
-                                                                    findAll {
-                                                                        this.size
+                                                    entries.add(when (it.a {
+                                                        findAll {
+                                                            this.size
+                                                        }
+                                                    }) {
+                                                        1, 2 -> {
+                                                            Pair(
+                                                                Pair(null, it.a {
+                                                                    findFirst {
+                                                                        attribute("href").removePrefix("/class/")
+                                                                            .toInt()
                                                                     }
+                                                                }), LocalDate.ofInstant(
+                                                                    dateFormat.parse(dateRegex.find(it.ownText)!!.value)
+                                                                        .toInstant(), ZoneId.of("Europe/Minsk")
+                                                                )
+                                                            )
+                                                        }
+
+                                                        3, 4 -> {
+                                                            Pair(
+                                                                Pair(it.a {
+                                                                    findFirst {
+                                                                        attribute("href").removePrefix("/class/")
+                                                                            .toInt()
+                                                                    }
+                                                                }, it.a {
+                                                                    findSecond {
+                                                                        attribute("href").removePrefix("/class/")
+                                                                            .toInt()
+                                                                    }
+                                                                }), LocalDate.ofInstant(
+                                                                    dateFormat.parse(dateRegex.find(it.ownText)!!.value)
+                                                                        .toInstant(), ZoneId.of("Europe/Minsk")
+                                                                )
+                                                            )
+                                                        }
+
+                                                        else -> throw IllegalStateException("Unexpected value: ${
+                                                            it.a {
+                                                                findAll {
+                                                                    this.size
                                                                 }
-                                                            }")
-                                                        })
+                                                            }
+                                                        }")
+                                                    })
                                                 }
                                             }
                                         }
@@ -640,18 +666,29 @@ class SchoolsByParser {
                                     val (id, date) = row.td {
                                         withClass = "date"
                                         return@td findFirst {
-                                            val date =
-                                                LocalDate.ofInstant(dateFormat.parse(dateRegex.find(text)!!.value.let {
-                                                    if (it.takeLast(4)
-                                                            .toIntOrNull() == null
-                                                    ) "$it ${LocalDate.now().year}"
-                                                    else it
-                                                }).toInstant(), ZoneId.of("Europe/Minsk"))
+                                            val date = LocalDate.ofInstant(dateRegex.find(text)?.value?.let {
+                                                if (it.takeLast(4).toIntOrNull() == null) "$it ${LocalDate.now().year}"
+                                                else it
+                                            }?.let { dateFormat.parse(it).toInstant() } ?: when {
+                                                text.contains("сегодня", true) -> Instant.now()
+                                                text.contains("вчера", true) -> LocalDateTime.now().minusDays(1)
+                                                    .toInstant(
+                                                        ZoneOffset.of("+03:00")
+                                                    )
+
+                                                text.contains("завтра", true) -> LocalDateTime.now().minusDays(1)
+                                                    .toInstant(
+                                                        ZoneOffset.of("+03:00")
+                                                    )
+
+                                                else -> throw IllegalArgumentException()
+
+                                            }, ZoneId.of("Europe/Minsk"))
                                             val id = this.attribute("lesson_id").toLong()
                                             id to date
                                         }
                                     }
-                                    val place = td { withClass = "number"; findFirst { text.toInt() } }
+                                    val place = row.td { withClass = "number"; findFirst { text.toInt() } }
                                     Lesson(
                                         id, journalID, teacherID, subgroupID, title, date, place
                                     )
@@ -922,28 +959,27 @@ class SchoolsByParser {
                 htmlDocument(it.bodyAsText()) {
                     val availableShifts = run {
                         val result = div { withClass = "cc_timeTable"; kotlin.runCatching { findAll { this.size } } }
-                        if (result.isSuccess)
-                            when (result.getOrNull()) {
-                                2 -> Pair(true, true)
-                                1 -> {
-                                    var firstShift = false
-                                    var secondShift = false
-                                    div {
-                                        withClass = "tabs1_cbb"
-                                        findFirst {
-                                            for ((index, child) in children.withIndex()) {
-                                                if (child.className == "cc_timeTable") {
-                                                    if (index == 1) firstShift = true
-                                                    else secondShift = true
-                                                }
+                        if (result.isSuccess) when (result.getOrNull()) {
+                            2 -> Pair(true, true)
+                            1 -> {
+                                var firstShift = false
+                                var secondShift = false
+                                div {
+                                    withClass = "tabs1_cbb"
+                                    findFirst {
+                                        for ((index, child) in children.withIndex()) {
+                                            if (child.className == "cc_timeTable") {
+                                                if (index == 1) firstShift = true
+                                                else secondShift = true
                                             }
                                         }
                                     }
-                                    Pair(firstShift, secondShift)
                                 }
-
-                                else -> throw UnknownError("Shifts detection failure: too many tables")
+                                Pair(firstShift, secondShift)
                             }
+
+                            else -> throw UnknownError("Shifts detection failure: too many tables")
+                        }
                         else Pair(false, false)
                     }
                     if (availableShifts.first) { // parse first shift

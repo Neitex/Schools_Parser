@@ -38,21 +38,35 @@ internal class SchoolsByParserTest {
     }
 
     @Nested
-    @DisabledIfEnvironmentVariables(
-        DisabledIfEnvironmentVariable(
-            named = "GITHUB_ACTIONS",
-            matches = "true",
-            disabledReason = "Schools.by authentication service is unavailable outside of Belarus"
-        ), DisabledIfEnvironmentVariable(
-            named = "OUTSIDE_OF_BELARUS",
-            matches = "true",
-            disabledReason = "Schools.by authentication service is unavailable outside of Belarus"
-        )
-    )
     @DisplayName("Authentication tests")
     inner class AuthTests {
 
-        // Unfortunately, tests for logging in with valid credentials are not possible, because it would be Schools.by TOS breaking
+        /*
+        Previously, there was a message that said "Auth tests are not possible since that would be a TOS violation".
+        However, due to the fact that Schools.by essentially started a war against third-party clients (not only clients, but info scrapers too!),
+         I have to add these tests (since we have to test the authentication process because of the war).
+         Also, I legally must state that I am not responsible for anything that might happen to your account, nor am I responsible for any damage caused by this library.
+
+        I sincerely hope that someday Schools.by team will realize that they are doing a mistake and will stop their war against third-party clients.
+         Or, even better, make a **freaking** API. (I'm not asking for much, am I?)
+
+        Sincerely yours, Pavel Matusevich.
+
+        P.S. Schools.by team, if you are reading this, please, stop this. You are only damaging your already low reputation.
+         */
+
+        @Test
+        @DisplayName("Test logging in")
+        @EnabledIfEnvironmentVariable(named = "RUN_AUTH_TEST", matches = "true")
+        fun testLoggingInWithValidCredentials() = runBlocking {
+            SchoolsByParser.setSubdomain(System.getenv("customSchoolDomain") ?: "https://demo.schools.by/")
+            val credentials = System.getenv()["auth_username"]!! to System.getenv()["auth_password"]!!
+            SchoolsByParser.setSubdomain("https://demo.schools.by/") // Reset subdomain to demo
+            val result = SchoolsByParser.AUTH.getLoginCookies(credentials.first, credentials.second)
+            assert(result.isSuccess) {
+                result.exceptionOrNull() ?: "Unknown error"
+            }
+        }
 
         @Test
         @DisplayName("Logging in with invalid credentials")
@@ -150,7 +164,7 @@ internal class SchoolsByParserTest {
         @DisplayName("Get user data using invalid credentials and invalid user ID")
         fun testGettingUserDataUsingNonExistentIDAndInvalidCredentials() = runBlocking {
             val result = SchoolsByParser.USER.getBasicUserInfo(
-                userID = 0, validParentCredentials
+                userID = 0, invalidCredentials
             ) // Credentials from Schools.by demo version
             assert(result.isFailure)
         }
@@ -165,6 +179,28 @@ internal class SchoolsByParserTest {
             val result = SchoolsByParser.CLASS.getClassData(classID = 8, validTeacherCredentials)
             assertTrue(result.isSuccess)
             assertEquals(SchoolClass(8, 108105, "11 \"А\""), result.getOrThrow())
+        }
+
+        @Test
+        @DisplayName("Get custom class data using valid class ID and valid credentials")
+        @EnabledIfEnvironmentVariable(named = "customSchoolsTest", matches = "true")
+        fun testGettingCustomClassDataValidClassIDValidCredentials() = runBlocking {
+            SchoolsByParser.setSubdomain(System.getenv("customSchoolDomain") ?: "https://demo.schools.by/")
+            val result = SchoolsByParser.CLASS.getClassData(
+                classID = System.getenv("customClassID")!!.toInt(), Credentials(
+                    csrfToken = System.getenv("customCsrfToken")!!,
+                    sessionID = System.getenv("customSessionID")!!
+                )
+            )
+            SchoolsByParser.setSubdomain("https://demo.schools.by/")
+            assertTrue(result.isSuccess)
+            assertEquals(
+                SchoolClass(
+                    System.getenv("customClassID")!!.toInt(),
+                    System.getenv("customClassTeacherID")!!.toInt(),
+                    System.getenv("customClassTitle")!!
+                ), result.getOrThrow()
+            )
         }
 
         @Test
@@ -231,7 +267,7 @@ internal class SchoolsByParserTest {
         fun testGettingTimetableValidClassIDValidCredentials() = runBlocking {
             val result =
                 SchoolsByParser.CLASS.getTimetable(classID = 8, validTeacherCredentials, walkToJournals = false)
-            assert(result.isSuccess)
+            assert(result.isSuccess) { result.toString() }
             val timetable = result.getOrThrow()
             assertAll({
                 assertNotNull(result.getOrThrow())
