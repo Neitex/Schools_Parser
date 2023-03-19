@@ -14,11 +14,15 @@ import it.skrape.selects.ElementNotFoundException
 import it.skrape.selects.eachText
 import it.skrape.selects.html5.*
 import java.net.http.HttpConnectTimeoutException
+import java.security.KeyStore
+import java.security.cert.X509Certificate
 import java.text.SimpleDateFormat
 import java.time.*
 import java.util.*
 import java.util.logging.Level
 import java.util.logging.Logger
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509TrustManager
 import kotlin.collections.set
 
 internal fun HttpResponse.checkCredentialsClear(): Boolean =
@@ -35,6 +39,28 @@ class SchoolsByParser {
                     endpoint {
                         connectAttempts = 2
                         connectTimeout = 10000
+                    }
+                    https {
+                        trustManager = object :
+                            X509TrustManager { // Custom trust manager to ignore SSL errors when using block bypass
+                            val systemTrustManager =
+                                TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
+                                    init(null as KeyStore?)
+                                }.trustManagers.filterIsInstance<X509TrustManager>().first()
+
+                            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+                                return systemTrustManager.checkClientTrusted(chain, authType)
+                            }
+
+                            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+                                if (useBlockBypass) return
+                                return systemTrustManager.checkServerTrusted(chain, authType)
+                            }
+
+                            override fun getAcceptedIssuers(): Array<X509Certificate> {
+                                return systemTrustManager.acceptedIssuers
+                            }
+                        }
                     }
                 }
                 expectSuccess = false
@@ -71,6 +97,12 @@ class SchoolsByParser {
         }
 
         /**
+         * Enables block bypass. This is a workaround for a geographical restriction to Belarus-only access.
+         * It is recommended to use it as a last resort because it is not guaranteed to work.
+         */
+        var useBlockBypass: Boolean = false
+
+        /**
          * Sets custom Http client for library to use
          */
         @Suppress("UNUSED") // It is not used in tests, so it appears to be unused,
@@ -78,6 +110,8 @@ class SchoolsByParser {
         fun setHttpClient(client: HttpClient) {
             this.client = client
         }
+
+        internal val logger = org.apache.log4j.Logger.getLogger("SchoolsByParser")
 
         internal fun noNulls(vararg values: Any?): Boolean = values.none { it == null }
 
@@ -91,8 +125,21 @@ class SchoolsByParser {
             requestUrl: String, credentials: Credentials?, returnValue: (HttpResponse) -> Result<T>
         ): Result<T> {
             return try {
-                val response = client.get {
+                val response = if (!useBlockBypass) client.get {
                     url(requestUrl)
+                    credentials?.also {
+                        cookie("csrftoken", credentials.csrfToken)
+                        cookie("sessionid", credentials.sessionID)
+                    }
+                } else client.get {
+                    url(
+                        "https://134.17.89.48/${
+                            requestUrl.removePrefix("https://schools.by/").removePrefix(
+                                schoolSubdomain
+                            )
+                        }"
+                    )
+                    headers.append(HttpHeaders.Host, schoolSubdomain.removePrefix("https://").removeSuffix("/"))
                     credentials?.also {
                         cookie("csrftoken", credentials.csrfToken)
                         cookie("sessionid", credentials.sessionID)
@@ -102,7 +149,7 @@ class SchoolsByParser {
                         .contains("already-redirected")
                 ) return Result.failure(BadSchoolsByCredentials())
                 if (response.status == HttpStatusCode.NotFound) return Result.failure(PageNotFound("Page \'$requestUrl\' was not found"))
-                returnValue(response)
+                return returnValue(response)
             } catch (e: HttpRequestTimeoutException) {
                 Result.failure(SchoolsByUnavailable("Schools.by did not respond", e))
             } catch (e: HttpConnectTimeoutException) {
@@ -245,7 +292,7 @@ class SchoolsByParser {
                     val name = Name.fromString(nameText)
                         ?: return@htmlDocument Result.failure(UnknownError("Name detection failed: bad input: \'$nameText\'"))
                     val type = SchoolsByUserType.valueOf(
-                        response.request.url.encodedPath.replace("director", "administration").replaceAfterLast('/', "")
+                        response.request.url.encodedPath.replaceAfterLast('/', "")
                             .removeSuffix("/").replaceBefore('/', "").removePrefix("/").uppercase()
                     )
                     Result.success(User(userID, type, name))
@@ -282,10 +329,6 @@ class SchoolsByParser {
                                     withClass = "r_user_info"
                                     customTag("", "> p.role + p.name") {
                                         a {
-                                            println(this.toCssSelector)
-                                            findAll {
-                                                println(this.joinToString { "$it---${it.toCssSelector}" })
-                                            }
                                             findFirst {
                                                 attribute("href").removePrefix("${schoolSubdomain}teacher/")
                                                     .toIntOrNull()
@@ -657,7 +700,7 @@ class SchoolsByParser {
             val dateRegex = Regex("""(\d{1,2})\s+([А-я]+)\s*(\d{4})?""")
             val dateFormat = SimpleDateFormat("dd MMMM yyyy", Locale.forLanguageTag("ru"))
 
-            fun DocElement.parseTable(title: String, subgroupID: Int?, teacherID: Int) = this.table {
+            fun DocElement.parseTable(title: String, subgroupID: Int?, teacherID: Int?) = this.table {
                 tbody {
                     tr {
                         findAll {
@@ -692,13 +735,10 @@ class SchoolsByParser {
                                     Lesson(
                                         id, journalID, teacherID, subgroupID, title, date, place
                                     )
-                                }.let {
-                                    if (it.isSuccess) it.getOrNull() else {
-                                        Logger.getAnonymousLogger()
-                                            .warning("Failed to parse lesson: ${it.exceptionOrNull()}")
-                                        null
-                                    }
-                                }
+                                }.fold({ l -> l }, {
+                                    logger.warn("Failed to parse lesson", it)
+                                    null
+                                })
                             }
                         }
                     }
@@ -714,14 +754,6 @@ class SchoolsByParser {
                         }
                     }
                 }
-                val isSubgroup = div {
-                    withClass = "title_box2"
-                    h1 {
-                        findFirst {
-                            text.contains("(по подгруппам)") // The only other way to know that is to check the title of a table, which is only known at the table-parsing moment
-                        }
-                    }
-                }
                 return@htmlDocument Result.success(div {
                     withClass = "group"
                     nullableFind { // There may be a subject without lessons
@@ -729,26 +761,32 @@ class SchoolsByParser {
                             val mapped = map {
                                 val (subgroup, teacherID) = it.div {
                                     withClass = "title"
-                                    val subgroup = if (isSubgroup) {
-                                        this.h2 {
+                                    val subgroup = h2 {
+                                        nullableFind {
                                             findFirst {
-                                                classSubgroupTitles.entries.firstOrNull {
-                                                    it.value == text.trim().removePrefix("Подгруппа \"")
-                                                        .removeSuffix("\"")
-                                                }?.key
-                                            }
-                                        }
-                                    } else null
-                                    val teacher = it.p {
-                                        withClass = "teacher"
-                                        "a.user_type_1, a.user_type_2, a.user_type_3, a.user_type_4, a.user_type_5, a.user_type_6, a.user_type_7" {
-                                            findFirst {
-                                                attribute("href").removePrefix("/teacher/")
-                                                    .removePrefix("/administration/").removePrefix("/director/").toInt()
+                                                val subgroupName = text.trim().takeIf { it.contains("Подгруппа") }
+                                                if (subgroupName != null)
+                                                    classSubgroupTitles.entries.firstOrNull {
+                                                        it.value == text.trim().removePrefix("Подгруппа \"")
+                                                            .removeSuffix("\"")
+                                                    }?.key
+                                                else null
                                             }
                                         }
                                     }
-                                    Pair(subgroup, teacher)
+                                    val teacher = it.p {
+                                        withClass = "teacher"
+                                        "a.user_type_1, a.user_type_2, a.user_type_3, a.user_type_4, a.user_type_5, a.user_type_6, a.user_type_7" {
+                                            nullableFind {
+                                                findFirst {
+                                                    attribute("href").removePrefix("/teacher/")
+                                                        .removePrefix("/administration/").removePrefix("/director/")
+                                                        .toInt()
+                                                }
+                                            }
+                                        }
+                                    }
+                                    subgroup to teacher
                                 }
                                 it.parseTable(title, subgroup, teacherID)
                             }.flatten()
@@ -775,11 +813,10 @@ class SchoolsByParser {
                     }
                 }
             }
-            Result.success(journals.mapNotNull {
-                getLessonsListByJournal(classID, it, classSubgroupTitles, credentials).let {
+            Result.success(journals.mapNotNull { journal ->
+                getLessonsListByJournal(classID, journal, classSubgroupTitles, credentials).let {
                     if (it.isFailure) {
-                        Logger.getLogger("SchoolsByParser")
-                            .log(Level.WARNING, "Failed to get lessons for journal $it", it.exceptionOrNull())
+                        logger.warn("Failed to get lessons for journal $journal", it.exceptionOrNull())
                         null
                     } else it.getOrNull()
                 }
@@ -791,74 +828,94 @@ class SchoolsByParser {
                 Result.success(htmlDocument(it.bodyAsText()) {
                     div {
                         withClass = "class_subgroup"
-                        findAll {
-                            map {
-                                val title = it.div {
-                                    withClass = "title"
-                                    b {
-                                        findFirst {
-                                            ownText
-                                        }
-                                    }
-                                }
-                                val id = it.div {
-                                    withClass = "title"
-                                    a {
-                                        findFirst {
-                                            attribute("href").removePrefix("/class/$classID/subgroup/")
-                                                .removeSuffix("/edit").toInt()
-                                        }
-                                    }
-                                }
-                                val pupils = it.ul {
-                                    withClass = "pupils"
-                                    li {
-                                        findAll {
-                                            mapNotNull {
-                                                if (it.a { findAll { this } }.size >= 2) null
-                                                else it.a {
-                                                    findFirst {
-                                                        attribute("href").removePrefix("/pupil/").toInt()
-                                                    }
+                        kotlin.runCatching {
+                            findAll {
+                                mapNotNull {
+                                    kotlin.runCatching {
+                                        val title = it.div {
+                                            withClass = "title"
+                                            b {
+                                                findFirst {
+                                                    ownText.trim()
                                                 }
                                             }
                                         }
-                                    }
+                                        val id = it.div {
+                                            withClass = "title"
+                                            a {
+                                                findFirst {
+                                                    attribute("href").removePrefix("/class/$classID/subgroup/")
+                                                        .removeSuffix("/edit").toInt()
+                                                }
+                                            }
+                                        }
+                                        val pupils = it.ul {
+                                            withClass = "pupils"
+                                            li {
+                                                this.nullableFind {
+                                                    findAll {
+                                                        mapNotNull {
+                                                            if (it.a { findAll { this } }.size >= 2) null
+                                                            else it.a {
+                                                                findFirst {
+                                                                    attribute("href").removePrefix("/pupil/").toInt()
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        } ?: listOf()
+                                        Subgroup(id, title, pupils)
+                                    }.fold({ res -> res }, { e ->
+                                        logger.warn("Failed to parse subgroup", e)
+                                        null
+                                    })
                                 }
-                                Subgroup(id, title, pupils)
                             }
-                        }
+                        }.getOrNull() ?: emptyList()
                     }
                 })
             }
     }
 
     /**
-     * Functions related to Teachers
+     * Functions related to Teachers/Directors/Administrators
      */
     object TEACHER {
 
         /**
          * Returns [SchoolClass] that given teacher is class teacher of (null otherwise)
+         * @param userType Must be one of next: [SchoolsByUserType.TEACHER], [SchoolsByUserType.ADMINISTRATION], [SchoolsByUserType.DIRECTOR]
          */
-        suspend fun getClassForTeacher(teacherID: Int, credentials: Credentials): Result<SchoolClass?> {
-            return wrapReturn("${schoolSubdomain}teacher/$teacherID", credentials) {
+        suspend fun getClassForTeacher(
+            teacherID: Int,
+            credentials: Credentials,
+            userType: SchoolsByUserType = SchoolsByUserType.TEACHER
+        ): Result<SchoolClass?> {
+            when (userType) {
+                SchoolsByUserType.PARENT, SchoolsByUserType.PUPIL -> return Result.failure(IllegalArgumentException("Only teachers can have classes"))
+                else -> {}
+            }
+            return wrapReturn("${schoolSubdomain}${userType.name.lowercase()}/$teacherID", credentials) {
                 var schoolClass: SchoolClass? = null
                 htmlDocument(it.bodyAsText()) {
-                    div {
-                        withClass = "pp_line"
-                        findAll {
-                            a {
-                                withAttributeKey = "href"
-                                findAll {
-                                    for (a in this) {
-                                        if (a.attribute("href").contains(".schools.by/class/")) {
-                                            schoolClass = SchoolClass(
-                                                a.attribute("href").replaceBeforeLast('/', "").drop(1).toInt(),
-                                                teacherID,
-                                                a.ownText.replace("-го", "")
-                                            )
-                                            break
+                    kotlin.runCatching {
+                        this.div {
+                            withClass = "pp_line"
+                            findAll {
+                                a {
+                                    withAttributeKey = "href"
+                                    findAll {
+                                        for (a in this) {
+                                            if (a.attribute("href").contains(".schools.by/class/")) {
+                                                schoolClass = SchoolClass(
+                                                    a.attribute("href").replaceBeforeLast('/', "").drop(1).toInt(),
+                                                    teacherID,
+                                                    a.ownText.replace("-го", "")
+                                                )
+                                                break
+                                            }
                                         }
                                     }
                                 }
@@ -874,8 +931,17 @@ class SchoolsByParser {
          * Returns timetable for given [teacherID].
          * !NOTE!: This method will not return other teachers in [TimetableLesson] (i.e. other subgroups teachers).
          * Please, call [CLASS.getTimetable] to get timetable with subgroups teachers
+         * @param userType Must be one of next: [SchoolsByUserType.TEACHER], [SchoolsByUserType.ADMINISTRATION], [SchoolsByUserType.DIRECTOR]
          */
-        suspend fun getTimetable(teacherID: Int, credentials: Credentials): Result<TwoShiftsTimetable> {
+        suspend fun getTimetable(
+            teacherID: Int,
+            credentials: Credentials,
+            userType: SchoolsByUserType = SchoolsByUserType.TEACHER
+        ): Result<TwoShiftsTimetable> {
+            when (userType) {
+                SchoolsByUserType.PARENT, SchoolsByUserType.PUPIL -> return Result.failure(IllegalArgumentException("Only teachers are supported"))
+                else -> {}
+            }
             return wrapReturn("${schoolSubdomain}teacher/$teacherID/timetable", credentials) {
                 val firstShiftTimetable = mutableMapOf<DayOfWeek, Array<TimetableLesson>>(
                     Pair(DayOfWeek.MONDAY, arrayOf()),

@@ -1,31 +1,9 @@
 package com.neitex
 
-class AuthorizationUnsuccessful : Exception {
-    constructor() : super()
-    constructor(msg: String) : super(msg)
-    constructor(msg: String, cause: Throwable) : super(msg, cause)
-}
+class AuthorizationUnsuccessful : Exception()
 
-class SchoolsByUnavailable : Exception {
-    constructor() : super()
-    constructor(msg: String) : super(msg)
-    constructor(msg: String, cause: Throwable) : super(msg, cause)
-}
+class SchoolsByUnavailable(msg: String, cause: Throwable) : Exception(msg, cause)
 
-class BadSchoolsByCredentials : Exception {
-    constructor() : super()
-    constructor(msg: String) : super(msg)
-    constructor(msg: String, cause: Throwable) : super(msg, cause)
-}
+class BadSchoolsByCredentials : Exception()
 
-class PageNotFound : Exception {
-    constructor() : super()
-    constructor(msg: String) : super(msg)
-    constructor(msg: String, cause: Throwable) : super(msg, cause)
-}
-
-class DependencyFailed : Exception {
-    constructor() : super()
-    constructor(msg: String) : super(msg)
-    constructor(msg: String, cause: Throwable) : super(msg, cause)
-}
+class PageNotFound(msg: String) : Exception(msg)

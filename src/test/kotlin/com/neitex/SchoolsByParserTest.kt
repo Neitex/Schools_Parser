@@ -1,5 +1,7 @@
 package com.neitex
 
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -840,6 +842,29 @@ internal class SchoolsByParserTest {
                     TimetablePlace(7, TimeConstraints(18, 0, 18, 45)),
                     TimetablePlace(8, TimeConstraints(19, 0, 19, 45)),
                 ), result.getOrThrow().second
+            )
+        }
+    }
+
+    inner class ParserTests {
+        @Test
+        @DisplayName("Test basic function in restrictions bypass mode")
+        fun testBasicFunctionInGeographicalRestrictionsBypassMode() = runBlocking {
+            SchoolsByParser.setSubdomain("https://demo.schools.by")
+            SchoolsByParser.useBlockBypass = true
+            val result = SchoolsByParser.SCHOOL.getBells()
+            SchoolsByParser.useBlockBypass = false
+            assert(result.isSuccess)
+            assert(result.getOrThrow().first.isNotEmpty())
+        }
+
+        @Test
+        @DisplayName("Set custom HTTP client")
+        fun testSetCustomHTTPClient() = runBlocking {
+            SchoolsByParser.setSubdomain("https://demo.schools.by")
+            SchoolsByParser.useBlockBypass = true
+            SchoolsByParser.setHttpClient( // It is only to please coverage tool, that method is intended to be used by library users to set custom HTTP client
+                HttpClient(CIO) {}
             )
         }
     }

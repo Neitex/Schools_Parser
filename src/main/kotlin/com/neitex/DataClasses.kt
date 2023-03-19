@@ -5,7 +5,7 @@ import java.time.LocalDate
 
 data class Credentials(val csrfToken: String, val sessionID: String)
 
-enum class SchoolsByUserType { PARENT, PUPIL, TEACHER, ADMINISTRATION }
+enum class SchoolsByUserType { PARENT, PUPIL, TEACHER, ADMINISTRATION, DIRECTOR }
 
 data class Name(val firstName: String, val middleName: String?, val lastName: String) {
     companion object {
@@ -84,9 +84,7 @@ data class TimetableLesson(
             if (other.teacherID == null) return false
             if (!teacherID.contentEquals(other.teacherID)) return false
         } else if (other.teacherID != null) return false
-        if (journalID != other.journalID) return false
-
-        return true
+        return journalID == other.journalID
     }
 
     override fun hashCode(): Int {
@@ -217,7 +215,7 @@ class TwoShiftsTimetable {
 data class Lesson(
     val lessonID: Long,
     val journalID: Int?,
-    val teacher: Int,
+    val teacher: Int?,
     val subgroup: Int?,
     val title: String,
     val date: LocalDate,
